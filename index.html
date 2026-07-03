@@ -1,0 +1,4037 @@
+<!-- modal — a Vim-inspired note editor, gentled for everyday work -->
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+<style>
+  :root {
+    --bg:        #14161c;
+    --bg-deep:   #0e1014;
+    --panel:     #1a1d25;
+    --panel-2:   #20242e;
+    --line:      #262a33;
+    --line-soft: #1d212a;
+    --fg:        #d6dbe5;
+    --fg-dim:    #8a92a3;
+    --fg-faint:  #565e6e;
+
+    --m-normal:  #5fb8c9;
+    --m-insert:  #8fd18a;
+    --m-visual:  #c39be6;
+    --m-command: #e3c188;
+
+    --accent:    #7aa2e0;
+    --danger:    #e0796f;
+    --on-accent: #0e1014;   /* text on top of mode-colored blocks */
+
+    /* live cursor color, swapped per mode */
+    --cursor:    var(--m-normal);
+
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", "Menlo", "Consolas", monospace;
+    --ui:   "Inter", ui-sans-serif, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+
+    /* derived tints — theme-agnostic, follow whatever palette is active */
+    --hover:      color-mix(in srgb, var(--fg) 6%, transparent);
+    --hover-2:    color-mix(in srgb, var(--fg) 10%, transparent);
+    --accent-dim: color-mix(in srgb, var(--accent) 14%, transparent);
+    --ring:       0 0 0 3px color-mix(in srgb, var(--cursor) 20%, transparent);
+    --shadow-1:   0 2px 8px rgba(0,0,0,.14), 0 10px 32px rgba(0,0,0,.22);
+    --shadow-2:   0 8px 28px rgba(0,0,0,.26), 0 36px 90px rgba(0,0,0,.38);
+    --r-sm: 8px; --r-md: 10px; --r-lg: 14px; --r-xl: 18px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg-deep);
+    color: var(--fg);
+    font-family: var(--mono);
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  .app {
+    height: 100vh;
+    display: grid;
+    grid-template-columns: 268px 1fr;
+    grid-template-rows: 50px 1fr 34px;
+    grid-template-areas:
+      "top    top"
+      "side   main"
+      "status status";
+  }
+
+  /* ---------- top bar ---------- */
+  .top {
+    grid-area: top;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 16px 0 18px;
+    background: var(--bg-deep);
+  }
+  .brand {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 600; letter-spacing: .16em; text-transform: uppercase;
+    font-size: 12px; color: var(--fg);
+    user-select: none;
+    margin-right: 8px;
+  }
+  .brand .glyph {
+    width: 20px; height: 20px; border-radius: 6px;
+    box-shadow: 0 0 0 1px rgba(255,255,255,.07) inset, 0 2px 8px rgba(0,0,0,.3);
+    display: block;
+  }
+  .top .spacer { flex: 1; }
+  .tbtn {
+    font-family: var(--ui);
+    font-size: 12.5px; font-weight: 500;
+    color: var(--fg-dim);
+    background: transparent;
+    border: none;
+    border-radius: var(--r-sm);
+    padding: 7px 11px;
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 7px;
+    transition: color .12s, background .12s;
+  }
+  .tbtn:hover { color: var(--fg); background: var(--hover); }
+  .tbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .tbtn.on { color: var(--accent); background: var(--accent-dim); }
+  .tbtn kbd { font-size: 10px; color: var(--fg-faint); }
+  .save-dot {
+    font-family: var(--ui);
+    font-size: 11.5px; color: var(--fg-faint); min-width: 58px; text-align: right;
+    transition: color .2s;
+    margin-right: 4px;
+  }
+  .save-dot.dirty { color: var(--m-command); }
+
+  /* ---------- sidebar ---------- */
+  .side {
+    grid-area: side;
+    background: var(--bg-deep);
+    display: flex; flex-direction: column;
+    min-height: 0;
+    font-family: var(--ui);
+  }
+  .side-search {
+    padding: 2px 12px 8px;
+  }
+  .side-search input {
+    width: 100%;
+    font-family: var(--ui); font-size: 13px;
+    color: var(--fg);
+    background: var(--hover);
+    border: 1px solid transparent;
+    border-radius: var(--r-md);
+    padding: 8px 12px;
+    transition: background .12s, border-color .12s, box-shadow .12s;
+  }
+  .side-search input::placeholder { color: var(--fg-faint); }
+  .side-search input:focus {
+    outline: none;
+    background: color-mix(in srgb, var(--panel) 80%, transparent);
+    border-color: color-mix(in srgb, var(--cursor) 45%, transparent);
+    box-shadow: var(--ring);
+  }
+
+  .note-list { flex: 1; overflow-y: auto; padding: 4px 10px 12px; min-height: 0; }
+  .section-head {
+    display: flex; align-items: center; gap: 5px;
+    padding: 14px 8px 6px;
+    font-size: 10.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--fg-faint);
+    cursor: pointer;
+    user-select: none;
+  }
+  .section-head:hover { color: var(--fg-dim); }
+  .section-head:first-child { padding-top: 8px; }
+  .section-head .caret {
+    display: inline-block; width: 9px;
+    font-size: 8px; letter-spacing: 0;
+    opacity: .8;
+    transition: transform .15s cubic-bezier(.2,.8,.3,1);
+  }
+  .section-head.collapsed .caret { transform: rotate(-90deg); }
+  .section-head .label { flex: 1; }
+  .section-head .count {
+    font-weight: 500; letter-spacing: 0; text-transform: none;
+    font-variant-numeric: tabular-nums;
+    color: var(--fg-faint);
+  }
+  .section-head .count.hot { color: var(--accent); font-weight: 600; }
+  .section-head .sh-btn {
+    font-size: 12px; letter-spacing: 0;
+    padding: 0 4px;
+    border-radius: 5px;
+    cursor: pointer;
+    opacity: 0; transition: opacity .12s, color .12s;
+  }
+  .section-head:hover .sh-btn { opacity: 1; }
+  .section-head .sh-btn:hover { color: var(--accent); }
+  .ni-unread { color: var(--accent); font-size: 8px; margin-right: 5px; vertical-align: 2px; }
+  .note-item {
+    position: relative;
+    padding: 8px 11px;
+    border-radius: var(--r-md);
+    cursor: pointer;
+    margin-bottom: 1px;
+    transition: background .1s;
+  }
+  .note-item:hover { background: var(--hover); }
+  .note-item.active {
+    background: var(--accent-dim);
+    box-shadow: inset 2.5px 0 0 var(--accent);
+  }
+  .note-item.trash-item { opacity: .68; }
+  .note-item.trash-item:hover { opacity: 1; }
+  .note-item .ni-title {
+    font-size: 13px; font-weight: 500; color: var(--fg);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    letter-spacing: -.005em;
+  }
+  .note-item.active .ni-title { color: var(--fg); font-weight: 600; }
+  .note-item .ni-mail-ic { color: var(--fg-faint); margin-right: 5px; font-size: 11px; }
+  .note-item .ni-meta {
+    font-size: 11px; color: var(--fg-faint); margin-top: 3px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .note-item .ni-actions {
+    position: absolute; top: 7px; right: 7px;
+    display: flex; gap: 4px;
+    opacity: 0; transition: opacity .12s;
+  }
+  .note-item:hover .ni-actions { opacity: 1; }
+  .ni-action-btn {
+    width: 21px; height: 21px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--panel-2) 85%, transparent);
+    backdrop-filter: blur(4px);
+    color: var(--fg-dim);
+    font-size: 11px;
+    cursor: pointer;
+    transition: color .1s, background .1s;
+  }
+  .ni-action-btn:hover { color: var(--fg); background: var(--panel-2); }
+  .side-foot {
+    padding: 10px 12px 12px;
+  }
+  .new-btn {
+    width: 100%;
+    font-family: var(--ui); font-size: 12.5px; font-weight: 500;
+    color: var(--fg-dim);
+    background: var(--hover);
+    border: none;
+    border-radius: var(--r-md);
+    padding: 9px;
+    cursor: pointer;
+    transition: color .12s, background .12s;
+  }
+  .new-btn:hover { color: var(--accent); background: var(--accent-dim); }
+
+  .empty-list {
+    color: var(--fg-faint); font-size: 12.5px; text-align: center;
+    padding: 34px 16px; line-height: 1.8;
+  }
+
+  /* ---------- main / editor — a floating card on the canvas ---------- */
+  .main {
+    grid-area: main;
+    position: relative;
+    background: var(--bg);
+    min-height: 0;
+    display: flex;
+    margin: 2px 10px 10px 2px;
+    border-radius: var(--r-lg);
+    border: 1px solid var(--line-soft);
+    box-shadow: 0 1px 3px rgba(0,0,0,.12), 0 12px 40px rgba(0,0,0,.16);
+    overflow: hidden;
+  }
+  /* mode-colored rail */
+  .rail {
+    width: 3px; flex: none;
+    background: linear-gradient(180deg, var(--cursor), color-mix(in srgb, var(--cursor) 30%, transparent));
+    box-shadow: 0 0 14px color-mix(in srgb, var(--cursor) 40%, transparent);
+    transition: background .18s ease;
+  }
+  .editor-wrap { position: relative; flex: 1; min-width: 0; }
+
+  #editor {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    resize: none; border: none; outline: none;
+    background: transparent;
+    color: var(--fg);
+    font-family: var(--mono);
+    font-size: 14.5px;
+    line-height: 1.75;
+    padding: 20px 26px 44px 22px;
+    caret-color: var(--cursor);
+    white-space: pre-wrap;
+    word-break: break-word;
+    tab-size: 2;
+  }
+  #editor::selection { background: color-mix(in srgb, var(--cursor) 30%, transparent); }
+  #editor::-moz-selection { background: color-mix(in srgb, var(--cursor) 30%, transparent); }
+  .nowrap #editor { white-space: pre; word-break: normal; overflow-x: auto; }
+
+  /* preview — reading mode gets the UI face */
+  #preview {
+    position: absolute; inset: 0;
+    overflow-y: auto;
+    padding: 22px 30px 56px 26px;
+    display: none;
+    line-height: 1.75;
+    font-family: var(--ui);
+    font-size: 15px;
+    color: var(--fg);
+    background: var(--bg);
+  }
+  .preview-on #preview { display: block; }
+  #preview h1, #preview h2, #preview h3 { line-height: 1.3; margin: 1.1em 0 .5em; font-weight: 650; letter-spacing: -.015em; }
+  #preview h1 { font-size: 1.7em; border-bottom: 1px solid var(--line-soft); padding-bottom: .25em; }
+  #preview h2 { font-size: 1.35em; }
+  #preview h3 { font-size: 1.12em; color: var(--fg-dim); }
+  #preview p { margin: .7em 0; }
+  #preview a { color: var(--accent); }
+  #preview code {
+    font-family: var(--mono);
+    background: var(--panel-2); padding: 1px 5px; border-radius: 5px; font-size: .85em;
+  }
+  #preview pre {
+    background: color-mix(in srgb, var(--panel) 70%, transparent); border: 1px solid var(--line-soft);
+    border-radius: var(--r-md); padding: 13px 15px; overflow-x: auto;
+    font-family: var(--mono);
+  }
+  #preview pre code { background: none; padding: 0; }
+  .md-code { position: relative; }
+  .md-code .code-copy {
+    position: absolute; top: 8px; right: 8px;
+    font-family: var(--mono); font-size: 11px; line-height: 1;
+    color: var(--fg-dim);
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 5px 8px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity .12s, color .12s, border-color .12s, background .12s;
+    display: inline-flex; align-items: center; gap: 5px;
+    user-select: none;
+  }
+  .md-code:hover .code-copy,
+  .md-code .code-copy:focus-visible { opacity: 1; }
+  .md-code .code-copy:hover { color: var(--fg); border-color: var(--fg-faint); }
+  .md-code .code-copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .md-code .code-copy.copied {
+    opacity: 1; color: var(--on-accent);
+    background: var(--m-insert); border-color: var(--m-insert);
+  }
+  #preview blockquote {
+    margin: .8em 0; padding: 2px 14px; color: var(--fg-dim);
+    border-left: 3px solid var(--m-visual);
+  }
+  #preview ul, #preview ol { padding-left: 1.4em; }
+  #preview li { margin: .25em 0; }
+  #preview hr { border: none; border-top: 1px solid var(--line); margin: 1.4em 0; }
+  #preview img.md-img { max-width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--line); margin: .7em 0; display: block; }
+  .md-table-wrap { overflow-x: auto; margin: .9em 0; border: 1px solid var(--line); border-radius: 8px; }
+  #preview table.md-table { border-collapse: collapse; width: 100%; font-size: .94em; }
+  #preview table.md-table th, #preview table.md-table td { padding: 7px 12px; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line-soft); text-align: left; vertical-align: top; }
+  #preview table.md-table th { background: var(--panel-2); color: var(--fg); font-weight: 600; position: sticky; top: 0; }
+  #preview table.md-table tr:last-child td { border-bottom: none; }
+  #preview table.md-table th:last-child, #preview table.md-table td:last-child { border-right: none; }
+  #preview table.md-table tr:nth-child(even) td { background: color-mix(in srgb, var(--panel) 45%, transparent); }
+  .preview-empty { color: var(--fg-faint); }
+
+  .editor-hint {
+    position: absolute; left: 24px; top: 20px;
+    color: var(--fg-faint); font-size: 13.5px; line-height: 1.9;
+    pointer-events: none; display: none;
+  }
+  .show-hint .editor-hint { display: block; }
+  .editor-hint b { color: var(--m-insert); font-weight: 600; }
+
+  /* ---------- status line ---------- */
+  .status {
+    grid-area: status;
+    display: flex; align-items: center;
+    background: var(--bg-deep);
+    font-size: 12px;
+    position: relative;
+    padding: 0 12px 4px 12px;
+    gap: 2px;
+  }
+  .mode-block {
+    display: flex; align-items: center;
+    padding: 3px 12px;
+    border-radius: 7px;
+    font-size: 10.5px;
+    font-weight: 700; letter-spacing: .14em;
+    color: var(--on-accent);
+    background: var(--cursor);
+    box-shadow: 0 0 12px color-mix(in srgb, var(--cursor) 35%, transparent);
+    transition: background .18s ease, box-shadow .18s ease;
+    user-select: none;
+  }
+  .status .file { display: flex; align-items: center; padding: 0 12px; color: var(--fg-dim); }
+  .status .file .dot { color: var(--m-command); margin-left: 8px; }
+  .status .spacer { flex: 1; }
+  .status .pos { display: flex; align-items: center; padding: 0 12px; color: var(--fg-faint); }
+  .status .tip { display: flex; align-items: center; padding: 0 6px 0 14px; color: var(--fg-faint); }
+  .status .tip kbd { color: var(--m-normal); }
+
+  /* command / search line overlays the status bar */
+  .cmdline {
+    position: absolute; inset: 0;
+    display: none;
+    align-items: center;
+    background: var(--bg-deep);
+    padding: 0 16px 4px;
+    gap: 8px;
+  }
+  .cmdline.show { display: flex; }
+  .cmdline .lead { color: var(--cursor); font-weight: 700; }
+  .cmdline input {
+    flex: 1; background: transparent; border: none; outline: none;
+    color: var(--fg); font-family: var(--mono); font-size: 12.5px;
+  }
+  .cmdline .ghost { color: var(--fg-faint); font-size: 11px; font-family: var(--ui); }
+
+  /* ---------- sheets (cheatsheet, dialogs) ---------- */
+  .scrim {
+    position: fixed; inset: 0;
+    background: color-mix(in srgb, var(--bg-deep) 52%, transparent);
+    display: none; align-items: center; justify-content: center;
+    z-index: 50; padding: 20px;
+    backdrop-filter: blur(12px) saturate(1.15);
+  }
+  .scrim.show { display: flex; }
+  @keyframes sheetIn {
+    from { opacity: 0; transform: translateY(12px) scale(.985); }
+    to   { opacity: 1; transform: none; }
+  }
+  .sheet {
+    width: min(880px, 100%); max-height: 86vh; overflow-y: auto;
+    background: color-mix(in srgb, var(--panel) 94%, transparent);
+    border: 1px solid var(--line-soft);
+    border-radius: var(--r-xl); padding: 24px 26px 28px;
+    box-shadow: var(--shadow-2);
+    font-family: var(--ui);
+  }
+  .scrim.show .sheet { animation: sheetIn .22s cubic-bezier(.2,.8,.3,1); }
+  .sheet-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
+  .sheet-head h2 { margin: 0; font-size: 16.5px; font-weight: 650; letter-spacing: -.01em; }
+  .sheet-head p { margin: 0; color: var(--fg-dim); font-size: 12.5px; }
+  .sheet-head .x {
+    margin-left: auto; background: transparent; border: none;
+    color: var(--fg-dim); border-radius: var(--r-sm); cursor: pointer; padding: 5px 10px;
+    font-family: var(--ui); font-size: 12px;
+    transition: color .12s, background .12s;
+  }
+  .sheet-head .x:hover { color: var(--fg); background: var(--hover); }
+  .modes-legend { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 18px; }
+  .legend-chip {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; color: var(--fg-dim);
+    background: var(--hover); border-radius: 999px; padding: 6px 12px;
+  }
+  .legend-chip .sw { width: 10px; height: 10px; border-radius: 999px; }
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 18px 28px;
+  }
+  .group h3 {
+    margin: 0 0 8px; font-size: 11px; text-transform: uppercase;
+    letter-spacing: .14em; color: var(--fg-faint); font-weight: 600;
+  }
+  .row { display: flex; align-items: baseline; gap: 10px; padding: 3px 0; }
+  .row .keys { flex: none; min-width: 78px; }
+  .row .desc { color: var(--fg-dim); font-size: 12.5px; }
+  kbd {
+    font-family: var(--mono);
+    background: var(--hover); border: 1px solid color-mix(in srgb, var(--fg) 12%, transparent);
+    border-bottom-width: 2px;
+    border-radius: 5px; padding: 1px 6px; font-size: 11.5px; color: var(--fg);
+  }
+
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--fg) 14%, transparent);
+    border-radius: 999px;
+    border: 2.5px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--fg) 26%, transparent);
+    background-clip: padding-box;
+  }
+
+  /* ---------- theme picker / file menu ---------- */
+  .theme-menu {
+    position: fixed; z-index: 60;
+    background: color-mix(in srgb, var(--panel) 88%, transparent);
+    backdrop-filter: blur(14px) saturate(1.15);
+    border: 1px solid var(--line-soft);
+    border-radius: var(--r-lg); padding: 6px; min-width: 220px;
+    box-shadow: var(--shadow-1);
+    display: none;
+    font-family: var(--ui);
+  }
+  .theme-menu.show { display: block; animation: sheetIn .18s cubic-bezier(.2,.8,.3,1); }
+  .theme-menu .tm-head {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .14em;
+    color: var(--fg-faint); padding: 7px 11px 8px; font-weight: 600;
+  }
+  .theme-opt {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 11px; border-radius: var(--r-sm); cursor: pointer;
+    font-size: 12.5px; color: var(--fg-dim);
+    transition: background .1s, color .1s;
+  }
+  .theme-opt:hover { background: var(--hover); color: var(--fg); }
+  .theme-opt.active { color: var(--fg); background: var(--accent-dim); }
+  .theme-opt .swatches { display: flex; gap: 4px; }
+  .theme-opt .sw { width: 12px; height: 12px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(127,127,127,.25); }
+  .theme-opt .chk { margin-left: auto; color: var(--accent); font-size: 12px; opacity: 0; }
+  .theme-opt.active .chk { opacity: 1; }
+  .theme-menu .tm-status { font-size: 11px; color: var(--fg-dim); padding: 2px 11px 9px; line-height: 1.55; max-width: 250px; }
+  .theme-opt .ic { width: 18px; text-align: center; color: var(--fg-faint); flex: none; }
+
+  .toast {
+    position: fixed; bottom: 50px; left: 50%;
+    transform: translateX(-50%) translateY(10px);
+    background: color-mix(in srgb, var(--panel-2) 90%, transparent);
+    backdrop-filter: blur(10px);
+    color: var(--fg);
+    border: 1px solid var(--line-soft); border-radius: 999px;
+    padding: 9px 18px; font-size: 12.5px; font-family: var(--ui);
+    box-shadow: var(--shadow-1);
+    opacity: 0; transition: opacity .22s, transform .22s cubic-bezier(.2,.8,.3,1);
+    z-index: 80; pointer-events: none; max-width: 80vw;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .save-dot { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .save-dot.reconnect { color: var(--m-command); cursor: pointer; font-weight: 600; }
+  .save-dot.reconnect:hover { color: var(--fg); }
+
+  /* ---------- email dialogs ---------- */
+  .email-sheet { width: min(540px, 100%); }
+  .ef { display: flex; flex-direction: column; gap: 13px; margin-top: 18px; }
+  .ef-row { display: flex; flex-direction: column; gap: 6px; }
+  .ef-row > span { font-size: 10.5px; text-transform: uppercase; letter-spacing: .12em; color: var(--fg-faint); font-weight: 600; }
+  .ef input[type=text], .ef input[type=password], .ef input[type=number] {
+    background: var(--hover); border: 1px solid transparent; border-radius: var(--r-md);
+    color: var(--fg); font-family: var(--mono); font-size: 13px; padding: 9px 12px; width: 100%;
+    box-sizing: border-box;
+    transition: border-color .12s, box-shadow .12s, background .12s;
+  }
+  .ef input:focus {
+    outline: none;
+    border-color: color-mix(in srgb, var(--cursor) 45%, transparent);
+    box-shadow: var(--ring);
+  }
+  .ef-row2 { display: flex; gap: 14px; align-items: flex-end; }
+  .ef-row2 .ef-row { flex: 1; }
+  .ef-check { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--fg-dim); padding-bottom: 9px; white-space: nowrap; }
+  .ef-div { margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--line-soft); font-size: 10.5px; text-transform: uppercase; letter-spacing: .12em; color: var(--fg-faint); font-weight: 600; }
+  .ef-note { font-size: 12px; color: var(--fg-dim); line-height: 1.5; min-height: 1.2em; }
+  .ef-note.err { color: var(--danger); }
+  .ef-note.ok { color: var(--m-insert); }
+  .ef-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+  .ef-btn {
+    background: var(--hover); border: none; color: var(--fg-dim);
+    border-radius: var(--r-md); cursor: pointer; padding: 9px 18px;
+    font-family: var(--ui); font-size: 12.5px; font-weight: 500;
+    transition: color .12s, background .12s;
+  }
+  .ef-btn:hover { color: var(--fg); background: var(--hover-2); }
+  .ef-btn.primary { background: var(--cursor); color: var(--on-accent); font-weight: 600; }
+  .ef-btn.primary:hover { filter: brightness(1.08); }
+  .ef-btn:disabled { opacity: .5; cursor: default; }
+
+  /* ---------- link picker / quick-open ---------- */
+  .palette-catch { position: fixed; inset: 0; z-index: 70; display: none; }
+  .palette-catch.show { display: block; }
+  .palette {
+    position: fixed; z-index: 71; top: 84px; left: 50%;
+    transform: translateX(-50%) translateY(-8px) scale(.99);
+    width: min(560px, 92vw);
+    background: color-mix(in srgb, var(--panel) 88%, transparent);
+    backdrop-filter: blur(16px) saturate(1.15);
+    border: 1px solid var(--line-soft);
+    border-radius: var(--r-lg); box-shadow: var(--shadow-2);
+    padding: 10px; display: none; opacity: 0;
+    transition: opacity .16s, transform .16s cubic-bezier(.2,.8,.3,1);
+    font-family: var(--ui);
+  }
+  .palette.show { display: block; opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+  .palette-head { font-size: 10px; text-transform: uppercase; letter-spacing: .14em; color: var(--fg-faint); padding: 5px 9px 10px; font-weight: 600; }
+  .palette input {
+    width: 100%; font-family: var(--ui); font-size: 13.5px; color: var(--fg);
+    background: var(--hover); border: 1px solid transparent;
+    border-radius: var(--r-md); padding: 10px 13px;
+    transition: border-color .12s, box-shadow .12s;
+  }
+  .palette input:focus {
+    outline: none;
+    border-color: color-mix(in srgb, var(--cursor) 45%, transparent);
+    box-shadow: var(--ring);
+  }
+  .palette-list { margin-top: 8px; max-height: 320px; overflow-y: auto; }
+  .palette-item { padding: 9px 11px; border-radius: var(--r-sm); cursor: pointer; display: flex; align-items: center; gap: 10px; }
+  .palette-item:hover { background: var(--hover); }
+  .palette-item.sel { background: var(--accent-dim); }
+  .palette-item .pi-title { color: var(--fg); font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .palette-item.create .pi-title { color: var(--m-insert); }
+  .palette-item .pi-tag {
+    margin-left: auto; font-size: 10px; color: var(--fg-faint); flex: none;
+    background: var(--hover); border-radius: 999px; padding: 2px 8px;
+  }
+  .palette-empty { color: var(--fg-faint); font-size: 12px; padding: 10px; }
+
+  #preview a.ilink { color: var(--accent); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); cursor: pointer; }
+  #preview a.ilink:hover { border-bottom-color: var(--accent); }
+  #preview a.ilink-new { color: var(--m-visual); border-bottom: 1px dashed color-mix(in srgb, var(--m-visual) 55%, transparent); cursor: pointer; }
+
+  /* ---------- line-number gutter ---------- */
+  .editor-mirror {
+    position: absolute; top: 0; left: 0; margin: 0;
+    visibility: hidden; pointer-events: none; overflow: hidden;
+    z-index: -1; white-space: pre-wrap; word-break: break-word;
+  }
+  .gutter {
+    position: absolute; top: 0; left: 0; bottom: 0; width: 52px;
+    overflow: hidden; display: none; z-index: 2;
+    background: var(--bg);
+    border-right: 1px solid color-mix(in srgb, var(--line-soft) 60%, transparent);
+    pointer-events: none;
+  }
+  .with-numbers .gutter { display: block; }
+  .preview-on .gutter { display: none; }
+  .gutter-inner { position: absolute; top: 0; left: 0; right: 0; will-change: transform; }
+  .lnum {
+    position: absolute; right: 12px;
+    font-size: 14.5px; line-height: 1.75;
+    color: var(--fg-faint); font-variant-numeric: tabular-nums;
+    -webkit-user-select: none; user-select: none;
+  }
+  .lnum.cur { color: var(--fg-dim); }
+  .with-numbers #editor { padding-left: 60px; }
+  .with-numbers .editor-hint { left: 60px; }
+  .editor-wrap.drag-over::after {
+    content: "Drop image to insert";
+    position: absolute; inset: 10px; z-index: 5; pointer-events: none;
+    display: flex; align-items: center; justify-content: center;
+    border: 2px dashed var(--m-insert); border-radius: 12px;
+    color: var(--m-insert); font-size: 13px;
+    background: color-mix(in srgb, var(--bg) 72%, transparent);
+  }
+
+  /* ---------- tag chips ---------- */
+  .tag-bar {
+    padding: 0 12px 4px;
+    display: flex; flex-wrap: wrap; gap: 5px;
+  }
+  .tag-bar:empty { display: none; }
+  .tag-chip {
+    font-family: var(--mono); font-size: 11px;
+    color: var(--fg-dim); background: var(--hover);
+    border: none; border-radius: 999px;
+    padding: 3px 10px; cursor: pointer;
+    transition: color .1s, background .1s;
+    user-select: none;
+  }
+  .tag-chip:hover { color: var(--fg); background: var(--hover-2); }
+  .tag-chip.active { color: var(--accent); background: var(--accent-dim); font-weight: 600; }
+
+  /* ---------- sort control ---------- */
+  .sort-row {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 14px 0;
+    font-size: 11px; color: var(--fg-faint);
+    font-family: var(--ui);
+  }
+  .sort-row .sort-lbl { flex: 1; }
+  .sort-btn {
+    font-family: var(--ui); font-size: 11px; font-weight: 500;
+    color: var(--fg-dim); background: transparent;
+    border: none; border-radius: 6px;
+    padding: 3px 9px; cursor: pointer;
+    transition: color .1s, background .1s;
+  }
+  .sort-btn:hover { color: var(--fg); background: var(--hover); }
+
+  /* ---------- word count ---------- */
+  .status .wc { display: flex; align-items: center; padding: 0 12px; color: var(--fg-faint); font-size: 11px; }
+
+  /* ---------- syntax highlighting ---------- */
+  .sh-kw  { color: #c39be6; }
+  .sh-str { color: #8fd18a; }
+  .sh-num { color: #e3c188; }
+  .sh-cmt { color: var(--fg-faint); font-style: italic; }
+  .sh-fn  { color: #7aa2e0; }
+  .sh-op  { color: #5fb8c9; }
+
+  /* ---------- task list checkboxes ---------- */
+  #preview .task-item { list-style: none; display: flex; align-items: baseline; gap: 7px; }
+  #preview .task-item input[type="checkbox"] {
+    accent-color: var(--m-insert); cursor: pointer; flex: none;
+    width: 13px; height: 13px; margin: 0;
+  }
+  #preview ul:has(.task-item) { padding-left: 0; }
+  #preview .task-item.done > span { color: var(--fg-faint); text-decoration: line-through; }
+
+  /* ---------- backlinks ---------- */
+  .backlinks {
+    margin-top: 2em; padding-top: 1em;
+    border-top: 1px solid var(--line);
+    font-size: 12.5px; color: var(--fg-faint);
+  }
+  .backlinks .bl-head { margin-bottom: 6px; letter-spacing: .06em; }
+  .backlinks a.ilink { font-size: 12.5px; }
+
+  /* ---------- fold / collapse ---------- */
+  #preview h1.fold-hd, #preview h2.fold-hd, #preview h3.fold-hd {
+    cursor: pointer; display: flex; align-items: baseline; gap: 7px;
+  }
+  #preview h1.fold-hd::before, #preview h2.fold-hd::before, #preview h3.fold-hd::before {
+    content: "▾"; font-size: .65em; color: var(--fg-faint); flex: none;
+    transition: transform .12s; line-height: 1; margin-top: .1em;
+  }
+  #preview h1.fold-hd.folded::before, #preview h2.fold-hd.folded::before, #preview h3.fold-hd.folded::before {
+    content: "▸";
+  }
+  .fold-body.collapsed { display: none; }
+  .fold-stub {
+    display: none; font-size: 11px; color: var(--fg-faint);
+    margin: 0 0 .7em 1.3em; padding: 1px 8px;
+    border-left: 2px solid var(--line); cursor: pointer;
+  }
+  .fold-stub.show { display: block; }
+
+  /* ---------- pin indicator ---------- */
+  .ni-pin { color: var(--m-command); font-size: 10px; margin-left: 4px; opacity: .8; }
+
+  /* ---------- focus mode ---------- */
+  .focus-mode .top { display: none; }
+  .focus-mode .side { display: none; }
+  .focus-mode .status { display: none; }
+  .focus-mode .app {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
+    grid-template-areas: "main";
+  }
+  .focus-mode .main { margin: 0; border-radius: 0; border: none; box-shadow: none; }
+  .focus-mode #editor { padding: 32px min(20%, 120px) 80px; }
+  .focus-mode #preview { padding: 32px min(20%, 120px) 80px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+
+  @media (max-width: 720px) {
+    .app { grid-template-columns: 1fr; grid-template-areas: "top" "main" "status"; }
+    .main { margin: 2px 8px 8px; }
+    .side { display: none; }
+    .side.open {
+      display: flex; position: absolute; z-index: 30; top: 50px; bottom: 34px; left: 0; width: 284px;
+      background: color-mix(in srgb, var(--bg-deep) 92%, transparent);
+      backdrop-filter: blur(14px);
+      border-right: 1px solid var(--line-soft);
+      box-shadow: var(--shadow-2);
+    }
+    .status .tip { display: none; }
+  }
+</style>
+
+<div class="app" id="app">
+  <div class="top">
+    <div class="brand">
+      <svg class="glyph" viewBox="0 0 512 512" aria-hidden="true">
+        <defs>
+          <linearGradient id="brandBg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1d2029"/><stop offset="1" stop-color="#0b0d11"/></linearGradient>
+          <linearGradient id="brandCur" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5fb8c9"/><stop offset="1" stop-color="#c39be6"/></linearGradient>
+        </defs>
+        <rect width="512" height="512" rx="116" fill="url(#brandBg)"/>
+        <g fill="#e3c188"><rect x="156" y="196" width="44" height="44" rx="13"/><rect x="156" y="272" width="44" height="44" rx="13"/></g>
+        <rect x="236" y="184" width="68" height="144" rx="17" fill="url(#brandCur)"/>
+      </svg>
+      modal
+    </div>
+    <button class="tbtn" id="menuBtn" title="Notes" style="display:none">☰</button>
+    <div class="spacer"></div>
+    <span class="save-dot" id="saveDot">saved</span>
+    <button class="tbtn" id="fileBtn" title="Save / load a .json file">file</button>
+    <button class="tbtn" id="themeBtn" title="Color scheme">theme</button>
+    <button class="tbtn" id="numBtn" title="Toggle line numbers">lines</button>
+    <button class="tbtn" id="wrapBtn" title="Toggle line wrap">wrap</button>
+    <button class="tbtn" id="prevBtn" title="Show rendered preview when not editing">preview</button>
+    <button class="tbtn" id="helpBtn">help <kbd>?</kbd></button>
+  </div>
+
+  <aside class="side" id="side">
+    <div class="side-search">
+      <input id="filter" type="text" placeholder="Search notes…" spellcheck="false" />
+    </div>
+    <div class="tag-bar" id="tagBar"></div>
+    <div class="sort-row">
+      <span class="sort-lbl" id="sortLbl"></span>
+      <button class="sort-btn" id="sortBtn" title="Cycle sort order">sort</button>
+    </div>
+    <div class="note-list" id="noteList"></div>
+    <div class="side-foot">
+      <button class="new-btn" id="newBtn">+ New note</button>
+    </div>
+  </aside>
+
+  <main class="main" id="main">
+    <div class="rail"></div>
+    <div class="editor-wrap">
+      <textarea id="editor" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="soft"></textarea>
+    <input type="file" id="importInput" accept=".json,application/json" style="display:none" />
+    <input type="file" id="openMdInput" accept=".md,.markdown,.txt,text/markdown,text/plain" multiple style="display:none" />
+      <input type="file" id="imageInput" accept="image/*" multiple style="display:none" />
+      <div class="gutter" id="gutter"><div class="gutter-inner" id="gutterInner"></div></div>
+      <div class="editor-mirror" id="editorMirror" aria-hidden="true"></div>
+      <div class="editor-hint" id="hint">
+        Press <b>i</b> to start typing.<br/>
+        Press <b>Esc</b> to return to Normal mode.<br/>
+        Press <b>?</b> any time to see every key.
+      </div>
+      <div id="preview"></div>
+    </div>
+  </main>
+
+  <div class="status">
+    <div class="mode-block" id="modeBlock">NORMAL</div>
+    <div class="file"><span id="fileName">untitled</span><span class="dot" id="modDot"></span></div>
+    <div class="spacer"></div>
+    <div class="wc" id="wc">0w</div>
+    <div class="pos" id="pos">Ln 1, Col 1</div>
+    <div class="tip">press <kbd>?</kbd> for keys&nbsp;·&nbsp;<kbd>i</kbd> insert&nbsp;·&nbsp;<kbd>Esc</kbd> normal</div>
+
+    <div class="cmdline" id="cmdline">
+      <span class="lead" id="cmdLead">:</span>
+      <input id="cmdInput" type="text" spellcheck="false" autocomplete="off" />
+      <span class="ghost" id="cmdGhost"></span>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="scrim">
+  <div class="sheet" role="dialog" aria-label="Keyboard reference">
+    <div class="sheet-head">
+      <h2>Keyboard reference</h2>
+      <p>Everything modal can do. You only ever need a handful.</p>
+      <button class="x" id="sheetX">close · Esc</button>
+    </div>
+    <div class="modes-legend">
+      <span class="legend-chip"><span class="sw" style="background:var(--m-normal)"></span> NORMAL — move &amp; run commands</span>
+      <span class="legend-chip"><span class="sw" style="background:var(--m-insert)"></span> INSERT — type freely</span>
+      <span class="legend-chip"><span class="sw" style="background:var(--m-visual)"></span> VISUAL — select text</span>
+      <span class="legend-chip"><span class="sw" style="background:var(--m-command)"></span> COMMAND — <kbd>:</kbd> actions</span>
+    </div>
+    <div class="grid" id="sheetGrid"></div>
+  </div>
+</div>
+
+<div class="palette-catch" id="paletteCatch"></div>
+<div class="palette" id="linkPalette" role="dialog" aria-label="Link to a note">
+  <div class="palette-head" id="paletteHead">Link to a note</div>
+  <input id="linkSearch" type="text" spellcheck="false" autocomplete="off" placeholder="Search notes, or type a new title…" />
+  <div class="palette-list" id="linkList"></div>
+</div>
+
+<div class="scrim" id="composeScrim">
+  <div class="sheet email-sheet" role="dialog" aria-label="Email this note">
+    <div class="sheet-head">
+      <h2>Email this note</h2>
+      <p id="composeFrom"></p>
+      <button class="x" id="composeX">close · Esc</button>
+    </div>
+    <div class="ef">
+      <label class="ef-row"><span>To</span><input id="composeTo" type="text" spellcheck="false" autocomplete="off" placeholder="recipient@example.com" /></label>
+      <label class="ef-row"><span>Subject</span><input id="composeSubject" type="text" spellcheck="false" autocomplete="off" /></label>
+      <div class="ef-note" id="composeNote"></div>
+      <div class="ef-actions">
+        <button class="ef-btn" id="composeSettings" type="button">Settings…</button>
+        <button class="ef-btn primary" id="composeSend" type="button">Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="smtpScrim">
+  <div class="sheet email-sheet" role="dialog" aria-label="Email settings">
+    <div class="sheet-head">
+      <h2>Email settings</h2>
+      <p>SMTP — stored on this device only.</p>
+      <button class="x" id="smtpX">close · Esc</button>
+    </div>
+    <div class="ef">
+      <label class="ef-row"><span>SMTP host</span><input id="smtpHost" type="text" spellcheck="false" autocomplete="off" placeholder="smtp.gmail.com" /></label>
+      <div class="ef-row2">
+        <label class="ef-row"><span>Port</span><input id="smtpPort" type="number" placeholder="587" /></label>
+        <label class="ef-check"><input id="smtpSecure" type="checkbox" /><span>SSL (465)</span></label>
+      </div>
+      <label class="ef-row"><span>Username</span><input id="smtpUser" type="text" spellcheck="false" autocomplete="off" placeholder="you@gmail.com" /></label>
+      <label class="ef-row"><span>Password / app password</span><input id="smtpPass" type="password" autocomplete="off" placeholder="app password" /></label>
+      <label class="ef-row"><span>From address</span><input id="smtpFrom" type="text" spellcheck="false" autocomplete="off" placeholder="you@gmail.com" /></label>
+      <div class="ef-div">Receiving — IMAP (uses the same username &amp; password)</div>
+      <label class="ef-row"><span>IMAP host</span><input id="imapHost" type="text" spellcheck="false" autocomplete="off" placeholder="imap.gmail.com" /></label>
+      <div class="ef-row2">
+        <label class="ef-row"><span>IMAP port</span><input id="imapPort" type="number" placeholder="993" /></label>
+        <label class="ef-check"><input id="imapSecure" type="checkbox" /><span>SSL (993)</span></label>
+      </div>
+      <div class="ef-note" id="smtpNote"></div>
+      <div class="ef-actions">
+        <button class="ef-btn" id="smtpTest" type="button">Test connection</button>
+        <button class="ef-btn primary" id="smtpSave" type="button">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------------------------------------------------------------------------
+  // Persistence — uses the artifact storage API, degrades to memory if absent.
+  // ---------------------------------------------------------------------------
+  var KEY = "modal:notes:v1";
+  var hasStore = (typeof window !== "undefined" && window.storage && typeof window.storage.get === "function");
+
+  var Store = {
+    async load() {
+      if (!hasStore) return null;
+      try {
+        var r = await window.storage.get(KEY);     // throws if missing
+        return r ? JSON.parse(r.value) : null;
+      } catch (e) { return null; }
+    },
+    async save(data) {
+      if (!hasStore) return false;
+      try { await window.storage.set(KEY, JSON.stringify(data)); return true; }
+      catch (e) { return false; }
+    }
+  };
+
+  // IndexedDB — the only place a FileSystemFileHandle can be remembered across
+  // refreshes. Every call is guarded so it silently no-ops where unavailable.
+  var IDB = {
+    db: null,
+    async open() {
+      if (this.db) return this.db;
+      if (typeof indexedDB === "undefined") return null;
+      try {
+        this.db = await new Promise(function (res, rej) {
+          var r = indexedDB.open("modal", 1);
+          r.onupgradeneeded = function () { r.result.createObjectStore("handles"); };
+          r.onsuccess = function () { res(r.result); };
+          r.onerror = function () { rej(r.error); };
+        });
+        return this.db;
+      } catch (e) { return null; }
+    },
+    async set(key, val) {
+      try {
+        var db = await this.open(); if (!db) return;
+        await new Promise(function (res, rej) {
+          var tx = db.transaction("handles", "readwrite");
+          tx.objectStore("handles").put(val, key);
+          tx.oncomplete = res; tx.onerror = function () { rej(tx.error); };
+        });
+      } catch (e) {}
+    },
+    async get(key) {
+      try {
+        var db = await this.open(); if (!db) return null;
+        return await new Promise(function (res, rej) {
+          var tx = db.transaction("handles", "readonly");
+          var rq = tx.objectStore("handles").get(key);
+          rq.onsuccess = function () { res(rq.result || null); };
+          rq.onerror = function () { rej(rq.error); };
+        });
+      } catch (e) { return null; }
+    },
+    async del(key) {
+      try {
+        var db = await this.open(); if (!db) return;
+        await new Promise(function (res) {
+          var tx = db.transaction("handles", "readwrite");
+          tx.objectStore("handles").delete(key);
+          tx.oncomplete = res; tx.onerror = res;
+        });
+      } catch (e) {}
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // State
+  // ---------------------------------------------------------------------------
+  var state = {
+    notes: [],          // {id, body, updatedAt}
+    activeId: null,
+    images: {}          // id -> { data: dataURL, type }
+  };
+
+  var mode = "normal";  // normal | insert | visual | command
+  var sortBy = "modified"; // modified | alpha | created
+  var activeTag = null;    // currently selected tag filter
+  var cur = 0;          // logical caret index in the buffer
+  var desiredCol = null;// remembered column for vertical motion
+  var anchor = 0;       // visual-mode selection anchor
+  var register = { text: "", linewise: false };
+  var foldState = {};   // noteId -> Set<headingIndex> of folded sections
+  var pending = "";     // multi-key sequence buffer (g, d, y, c, r, z)
+  var count = "";       // numeric prefix
+  var awaitChar = "";   // for r<char>
+  var lastSearch = "";
+  var undoStack = [], redoStack = [];
+
+  // ---------------------------------------------------------------------------
+  // Elements
+  // ---------------------------------------------------------------------------
+  var $ = function (id) { return document.getElementById(id); };
+  var app = $("app");
+  var ta = $("editor");
+  var noteList = $("noteList");
+  var filterInput = $("filter");
+  var modeBlock = $("modeBlock");
+  var fileName = $("fileName");
+  var modDot = $("modDot");
+  var posEl = $("pos");
+  var saveDot = $("saveDot");
+  var hint = $("hint");
+  var preview = $("preview");
+  var cmdline = $("cmdline");
+  var cmdLead = $("cmdLead");
+  var cmdInput = $("cmdInput");
+  var cmdGhost = $("cmdGhost");
+  var scrim = $("scrim");
+
+  var previewing = false;
+
+  // ---------------------------------------------------------------------------
+  // Themes
+  // ---------------------------------------------------------------------------
+  var THEMES = {
+    midnight: { label: "Midnight", vars: {
+      "--bg":"#14161c","--bg-deep":"#0e1014","--panel":"#1a1d25","--panel-2":"#20242e",
+      "--line":"#262a33","--line-soft":"#1d212a","--fg":"#d6dbe5","--fg-dim":"#8a92a3","--fg-faint":"#565e6e",
+      "--m-normal":"#5fb8c9","--m-insert":"#8fd18a","--m-visual":"#c39be6","--m-command":"#e3c188",
+      "--accent":"#7aa2e0","--danger":"#e0796f","--on-accent":"#0e1014" } },
+    ember: { label: "Ember · red / black", vars: {
+      "--bg":"#161010","--bg-deep":"#0c0707","--panel":"#1d1413","--panel-2":"#251918",
+      "--line":"#36211f","--line-soft":"#241716","--fg":"#ecdcd8","--fg-dim":"#a6837d","--fg-faint":"#70534f",
+      "--m-normal":"#e2554d","--m-insert":"#f0a05a","--m-visual":"#df7aa2","--m-command":"#e8c45c",
+      "--accent":"#e2554d","--danger":"#ff6b6b","--on-accent":"#140b0b" } },
+    lantern: { label: "Lantern · warm amber", vars: {
+      "--bg":"#1d1a14","--bg-deep":"#14110b","--panel":"#262017","--panel-2":"#2f2819",
+      "--line":"#3b3120","--line-soft":"#2a2417","--fg":"#ece0c8","--fg-dim":"#a99878","--fg-faint":"#6f6149",
+      "--m-normal":"#d9a441","--m-insert":"#a9b665","--m-visual":"#d3869b","--m-command":"#e3c188",
+      "--accent":"#e0a04a","--danger":"#ea6962","--on-accent":"#14110b" } },
+    frost: { label: "Frost · cool blue", vars: {
+      "--bg":"#1b2230","--bg-deep":"#141a24","--panel":"#222b3a","--panel-2":"#2a3547",
+      "--line":"#364152","--line-soft":"#232c3a","--fg":"#d8e0ec","--fg-dim":"#8b97ab","--fg-faint":"#5d6a7e",
+      "--m-normal":"#88c0d0","--m-insert":"#a3be8c","--m-visual":"#b48ead","--m-command":"#ebcb8b",
+      "--accent":"#81a1c1","--danger":"#bf616a","--on-accent":"#141a24" } },
+    grove: { label: "Grove · forest green", vars: {
+      "--bg":"#121a14","--bg-deep":"#0b110d","--panel":"#18241b","--panel-2":"#1f2e23",
+      "--line":"#29382d","--line-soft":"#18241b","--fg":"#d4e2d6","--fg-dim":"#83977f","--fg-faint":"#566b59",
+      "--m-normal":"#6fbf73","--m-insert":"#a6d17a","--m-visual":"#b59ad6","--m-command":"#d8c074",
+      "--accent":"#6fbf73","--danger":"#e0796f","--on-accent":"#0b110d" } },
+    paper: { label: "Paper · light", vars: {
+      "--bg":"#f7f4ec","--bg-deep":"#ece5d6","--panel":"#fffdf7","--panel-2":"#f1ebdd",
+      "--line":"#d9d0bd","--line-soft":"#e7e0cf","--fg":"#2c2a26","--fg-dim":"#6b6557","--fg-faint":"#9c9482",
+      "--m-normal":"#2b8a99","--m-insert":"#4f9a2f","--m-visual":"#8a4fc4","--m-command":"#b07d18",
+      "--accent":"#2f6fd0","--danger":"#c0392b","--on-accent":"#ffffff" } }
+  };
+  var THEME_ORDER = ["system", "midnight", "ember", "lantern", "frost", "grove", "paper"];
+  THEMES["system"] = { label: "System · follows OS" };
+  if (window.matchMedia) {
+    window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", function () {
+      if (systemThemeActive) applyTheme(resolveSystemTheme(), false);
+    });
+  }
+  var currentTheme = "midnight";
+
+  var systemThemeActive = false;
+  function resolveSystemTheme() {
+    return (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) ? "paper" : "midnight";
+  }
+  function applyThemeVars(name) {
+    var t = THEMES[name];
+    if (!t || !t.vars) { name = "midnight"; t = THEMES.midnight; }
+    var root = document.documentElement;
+    for (var k in t.vars) root.style.setProperty(k, t.vars[k]);
+    setModeColor();
+  }
+  function applyTheme(name, persist) {
+    if (name === "system") {
+      systemThemeActive = true;
+      currentTheme = "system";
+      if (persist) { state.theme = "system"; scheduleSave(); }
+      applyThemeVars(resolveSystemTheme());
+      var menu = document.getElementById("themeMenu");
+      if (menu) Array.prototype.forEach.call(menu.querySelectorAll(".theme-opt"), function (el) {
+        el.classList.toggle("active", el.dataset.name === "system");
+      });
+      return;
+    }
+    systemThemeActive = false;
+    var t = THEMES[name];
+    if (!t || !t.vars) { name = "midnight"; t = THEMES.midnight; }
+    currentTheme = name;
+    var root = document.documentElement;
+    for (var k in t.vars) root.style.setProperty(k, t.vars[k]);
+    setModeColor();
+    var menu = document.getElementById("themeMenu");
+    if (menu) Array.prototype.forEach.call(menu.querySelectorAll(".theme-opt"), function (el) {
+      el.classList.toggle("active", el.dataset.name === name);
+    });
+    if (persist) { state.theme = name; scheduleSave(); }
+  }
+  function buildThemeMenu() {
+    var menu = document.createElement("div");
+    menu.className = "theme-menu";
+    menu.id = "themeMenu";
+    var head = document.createElement("div");
+    head.className = "tm-head"; head.textContent = "Color scheme";
+    menu.appendChild(head);
+    THEME_ORDER.forEach(function (name) {
+      var t = THEMES[name];
+      var opt = document.createElement("div");
+      opt.className = "theme-opt"; opt.dataset.name = name;
+      if (t.vars) {
+        var sw = document.createElement("div"); sw.className = "swatches";
+        ["--bg-deep", "--m-normal", "--m-insert", "--m-visual"].forEach(function (v) {
+          var s = document.createElement("span"); s.className = "sw"; s.style.background = t.vars[v]; sw.appendChild(s);
+        });
+        opt.appendChild(sw);
+      } else {
+        var ic = document.createElement("span"); ic.className = "ic"; ic.textContent = "◑"; opt.appendChild(ic);
+      }
+      var label = document.createElement("span"); label.textContent = t.label;
+      var chk = document.createElement("span"); chk.className = "chk"; chk.textContent = "●";
+      opt.appendChild(label); opt.appendChild(chk);
+      opt.addEventListener("click", function () { applyTheme(name, true); closeThemeMenu(); ta.focus(); });
+      menu.appendChild(opt);
+    });
+    document.body.appendChild(menu);
+    return menu;
+  }
+  function toggleThemeMenu() {
+    var menu = document.getElementById("themeMenu") || buildThemeMenu();
+    if (menu.classList.contains("show")) { closeThemeMenu(); return; }
+    var r = document.getElementById("themeBtn").getBoundingClientRect();
+    menu.style.top = (r.bottom + 6) + "px";
+    menu.style.right = (window.innerWidth - r.right) + "px";
+    menu.classList.add("show");
+  }
+  function closeThemeMenu() {
+    var menu = document.getElementById("themeMenu");
+    if (menu) menu.classList.remove("show");
+  }
+
+  // ---------------------------------------------------------------------------
+  // JSON file: export, import, and (where supported) autosave to a real file
+  // ---------------------------------------------------------------------------
+  var fsSupported = (typeof window !== "undefined" && "showSaveFilePicker" in window);
+  var fileHandle = null;     // linked FileSystemFileHandle for autosave
+  var pendingHandle = null;  // remembered handle awaiting a permission re-grant
+  var linkedName = "";       // its display name
+  var fileBlocked = false;   // true if the picker was blocked (e.g. sandbox)
+
+  function toast(msg) {
+    var t = document.createElement("div");
+    t.className = "toast"; t.textContent = msg;
+    document.body.appendChild(t);
+    requestAnimationFrame(function () { t.classList.add("show"); });
+    setTimeout(function () { t.classList.remove("show"); setTimeout(function () { t.remove(); }, 260); }, 2300);
+  }
+
+  function exportData() {
+    return { app: "modal", version: 1, exportedAt: new Date().toISOString(), theme: currentTheme, notes: state.notes, images: state.images };
+  }
+  function stamp() {
+    var d = new Date(), p = function (n) { return (n < 10 ? "0" : "") + n; };
+    return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + "-" + p(d.getHours()) + p(d.getMinutes());
+  }
+  function mergeImages(incoming) {
+    if (!incoming || typeof incoming !== "object") return;
+    if (!state.images) state.images = {};
+    Object.keys(incoming).forEach(function (k) { if (!state.images[k]) state.images[k] = incoming[k]; });
+  }
+
+  function downloadExport() {
+    try {
+      var blob = new Blob([JSON.stringify(exportData(), null, 2)], { type: "application/json" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url; a.download = "modal-notes-" + stamp() + ".json";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      toast("Backup downloaded");
+    } catch (e) { toast("Download blocked here — try Copy as JSON"); }
+  }
+
+  async function copyJson() {
+    var text = JSON.stringify(exportData(), null, 2);
+    try { await navigator.clipboard.writeText(text); toast("Notes copied as JSON"); return; }
+    catch (e) {}
+    var t = document.createElement("textarea");
+    t.value = text; document.body.appendChild(t); t.select();
+    try { document.execCommand("copy"); toast("Notes copied as JSON"); }
+    catch (e2) { toast("Couldn't copy automatically"); }
+    t.remove();
+  }
+
+  // Copy arbitrary text to the clipboard, with a fallback for odd environments.
+  function fallbackCopy(text) {
+    var t = document.createElement("textarea");
+    t.value = text;
+    t.style.position = "fixed"; t.style.top = "-1000px"; t.style.opacity = "0";
+    document.body.appendChild(t); t.focus(); t.select();
+    var ok = false;
+    try { ok = document.execCommand("copy"); } catch (e) {}
+    t.remove();
+    return ok;
+  }
+  function copyTextToClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text)
+        .then(function () { return true; })
+        .catch(function () { return fallbackCopy(text); });
+    }
+    return Promise.resolve(fallbackCopy(text));
+  }
+
+  // ---- Save a single note as a portable .md file ----------------------------
+  function sanitizeName(s) {
+    return (s || "").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 80) || "note";
+  }
+  // Expand in-app image refs (img:ID) into embedded data URIs so the exported
+  // file stands on its own outside modal.
+  function noteToMarkdown(note) {
+    var body = (note && note.body) || "";
+    return body.replace(/!\[([^\]]*)\]\((img:[^)]+)\)/g, function (m, alt, ref) {
+      var data = resolveImg(ref.trim());
+      return data ? "![" + alt + "](" + data + ")" : m;
+    });
+  }
+  async function saveNoteAsMd(note, nameHint) {
+    if (!note) { toast("No note to save"); return; }
+    var md = noteToMarkdown(note);
+    var base = nameHint ? sanitizeName(nameHint.replace(/\.(md|markdown)$/i, "")) : sanitizeName(titleOf(note));
+    var name = base + ".md";
+    // Preferred: a real Save dialog via the File System Access API.
+    if (fsSupported && !fileBlocked) {
+      try {
+        var h = await window.showSaveFilePicker({
+          suggestedName: name,
+          types: [{ description: "Markdown", accept: { "text/markdown": [".md", ".markdown"] } }]
+        });
+        var w = await h.createWritable();
+        await w.write(md);
+        await w.close();
+        toast("Saved " + (h.name || name));
+        return;
+      } catch (e) {
+        if (e && e.name === "AbortError") return;   // user cancelled the picker
+        // otherwise fall through to a plain download
+      }
+    }
+    try {
+      var blob = new Blob([md], { type: "text/markdown" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      toast("Saved " + name);
+    } catch (e2) { toast("Couldn't save the file here"); }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Email — send a note via the user's SMTP account (nodemailer in main), or
+  // fall back to the OS mail client (mailto:) when SMTP isn't configured.
+  // ---------------------------------------------------------------------------
+  var composeNote = null;
+
+  function emailAvailable() {
+    return !!(window.mailer && typeof window.mailer.getConfig === "function");
+  }
+
+  // Pull a bare address out of a "Name <addr>" or plain-address string.
+  function extractEmail(s) {
+    s = String(s || "");
+    var m = s.match(/<([^>]+)>/);
+    if (m) return m[1].trim();
+    var m2 = s.match(/[^\s<>,]+@[^\s<>,]+/);
+    return m2 ? m2[0] : s.trim();
+  }
+  // Read back the From/To/Date headers and the message text from a note that was
+  // created by fetchEmail (mailToNoteBody wrote them as Markdown).
+  function parseMailNote(note) {
+    var body = note.body || "";
+    var from = "", to = "", date = "";
+    body.split("\n").forEach(function (l) {
+      var mf = l.match(/^\*\*From:\*\*\s*(.+)$/); if (mf && !from) from = mf[1].trim();
+      var mt = l.match(/^\*\*To:\*\*\s*(.+)$/);   if (mt && !to)   to   = mt[1].trim();
+      var md = l.match(/^\*\*Date:\*\*\s*(.+)$/); if (md && !date) date = md[1].trim();
+    });
+    var sep = body.indexOf("\n---\n");
+    var text = sep >= 0 ? body.slice(sep + 5) : "";
+    return { subject: titleOf(note), from: from, to: to, date: date, text: text.trim() };
+  }
+
+  // Draft a reply to a received-email note: a fresh note pre-filled with the
+  // recipient, a "Re:" subject line, and the original quoted below. Opens it in
+  // the editor so the reply is typed above the quote, then :email / ⤴ sends it.
+  function replyToNote(note) {
+    note = note || active();
+    if (!note) { toast("No message to reply to"); return; }
+    if (!note.mailId) { toast("Not a received email — reply only works on fetched messages"); return; }
+    var m = parseMailNote(note);
+    var addr = extractEmail(m.from);
+    if (!addr) { toast("Couldn't find a sender address to reply to"); return; }
+    var subject = /^\s*re:/i.test(m.subject) ? m.subject : "Re: " + m.subject;
+    var quoted = m.text ? m.text.split("\n").map(function (l) { return "> " + l; }).join("\n") : "> (no text content)";
+    var attribution = "On " + (m.date || "an earlier date") + ", " + (m.from || addr) + " wrote:";
+    var head = "# " + subject + "\n\n";
+    var body = head + "\n\n---\n" + attribution + "\n\n" + quoted + "\n";
+    var now = Date.now();
+    var nt = { id: uid(), body: body, updatedAt: now, createdAt: now, replyTo: addr, inReplyTo: note.mailId };
+    state.notes.push(nt);
+    openNote(nt.id);
+    renderList(); renderTagBar();
+    enterInsert(head.length);      // caret on the blank line under the subject
+    scheduleSave();
+    toast("Reply drafted — write your message, then :email to send");
+  }
+
+  async function emailNote(note) {
+    note = note || active();
+    if (!note) { toast("No note to email"); return; }
+    if (!emailAvailable()) {
+      // Older build with only the mailto bridge — degrade gracefully.
+      if (window.mailer && window.mailer.compose) {
+        window.mailer.compose(titleOf(note), (note.body || "").replace(/img:[A-Za-z0-9_-]+/g, "[image]"));
+      } else { toast("Email isn't available in this build"); }
+      return;
+    }
+    var cfg;
+    try { cfg = await window.mailer.getConfig(); } catch (e) { cfg = null; }
+    if (!cfg || !cfg.host) { openSmtpSettings({ reason: "Set up SMTP below to send mail straight from modal." }); return; }
+    openEmailCompose(note, cfg);
+  }
+
+  function setEfNote(id, msg, cls) {
+    var el = $(id); if (!el) return;
+    el.textContent = msg || "";
+    el.className = "ef-note" + (cls ? " " + cls : "");
+  }
+
+  function openEmailCompose(note, cfg) {
+    composeNote = note;
+    $("composeTo").value = note.replyTo || (cfg && cfg.lastTo) || "";
+    $("composeSubject").value = titleOf(note);
+    $("composeFrom").textContent = (cfg && (cfg.from || cfg.user)) ? "From " + (cfg.from || cfg.user) : "";
+    setEfNote("composeNote", "", "");
+    $("composeSend").disabled = false;
+    $("composeScrim").classList.add("show");
+    requestAnimationFrame(function () { requestAnimationFrame(function () { var t = $("composeTo"); t.focus(); if (t.value) t.select(); }); });
+  }
+  function closeCompose() { $("composeScrim").classList.remove("show"); ta.focus(); }
+
+  // Minimal CSS for the HTML email body — light theme, so it reads well in any
+  // mail client. Embedded in a <style> block (and image widths are capped
+  // inline-style-free since most clients honor a <style> in the body/head).
+  var EMAIL_CSS =
+    "body{margin:0;background:#ffffff;}" +
+    ".modal-mail{font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#1a1a1a;max-width:680px;margin:0 auto;padding:24px;}" +
+    ".modal-mail h1,.modal-mail h2,.modal-mail h3{line-height:1.25;margin:1.2em 0 .5em;}" +
+    ".modal-mail h1{font-size:1.6em;}.modal-mail h2{font-size:1.3em;}.modal-mail h3{font-size:1.1em;}" +
+    ".modal-mail p{margin:.6em 0;}" +
+    ".modal-mail img,.modal-mail .md-img{max-width:100%;height:auto;border-radius:6px;}" +
+    ".modal-mail pre{background:#f4f5f7;border:1px solid #e3e6ea;border-radius:8px;padding:12px 14px;overflow:auto;}" +
+    ".modal-mail code{font-family:SFMono-Regular,Consolas,Menlo,monospace;font-size:.9em;}" +
+    ".modal-mail :not(pre)>code{background:#f4f5f7;border-radius:4px;padding:1px 5px;}" +
+    ".modal-mail blockquote{margin:.8em 0;padding:.2em 1em;border-left:3px solid #d0d4da;color:#555;}" +
+    ".modal-mail table{border-collapse:collapse;width:100%;margin:.8em 0;}" +
+    ".modal-mail th,.modal-mail td{border:1px solid #e3e6ea;padding:6px 10px;text-align:left;}" +
+    ".modal-mail a,.modal-mail .ilink,.modal-mail .ilink-new{color:#2563eb;text-decoration:none;}" +
+    ".modal-mail hr{border:none;border-top:1px solid #e3e6ea;margin:1.4em 0;}" +
+    ".modal-mail ul,.modal-mail ol{padding-left:1.5em;}";
+
+  // Render the note to an HTML email + plain-text fallback + inline-image
+  // attachments, reusing the app's own Markdown renderer.
+  function buildNoteEmail(note) {
+    emailCidCollect = new Set();
+    var inner;
+    try { inner = renderMarkdown(note.body || ""); }
+    finally { /* ids collected; clear the flag below */ }
+    var ids = Array.from(emailCidCollect);
+    emailCidCollect = null;
+
+    // Strip interactive chrome that has no meaning in an email.
+    inner = inner
+      .replace(/<button class="code-copy"[\s\S]*?<\/button>/g, "")
+      .replace(/<input type="checkbox"([^>]*?)\/>/g, function (_, attrs) { return /checked/.test(attrs) ? "☑ " : "☐ "; });
+
+    var attachments = ids.map(function (id) {
+      var im = state.images[id];
+      if (!im) return null;
+      var ext = (im.type && im.type.split("/")[1]) || "png";
+      return { cid: id, filename: id + "." + ext, dataUri: im.data };
+    }).filter(Boolean);
+
+    var html = '<!doctype html><html><head><meta charset="utf-8"/><style>' + EMAIL_CSS +
+      '</style></head><body><div class="modal-mail">' + inner + "</div></body></html>";
+    var text = (note.body || "")
+      .replace(/!\[[^\]]*\]\(img:[^)]*\)/g, "[image]")
+      .replace(/img:[A-Za-z0-9_-]+/g, "[image]");
+    return { html: html, text: text, attachments: attachments };
+  }
+
+  async function sendComposed() {
+    if (!composeNote) return;
+    var to = $("composeTo").value.trim();
+    if (!to) { setEfNote("composeNote", "Enter a recipient address.", "err"); $("composeTo").focus(); return; }
+    var subject = $("composeSubject").value.trim() || titleOf(composeNote);
+    var built = buildNoteEmail(composeNote);
+    var btn = $("composeSend");
+    btn.disabled = true;
+    setEfNote("composeNote", "Sending…", "");
+    var res;
+    var payload = { to: to, subject: subject, html: built.html, text: built.text, attachments: built.attachments };
+    if (composeNote.inReplyTo) payload.inReplyTo = composeNote.inReplyTo;
+    try { res = await window.mailer.send(payload); }
+    catch (e) { res = { ok: false, error: String(e) }; }
+    btn.disabled = false;
+    if (res && res.ok) { closeCompose(); toast("Email sent to " + to); }
+    else { setEfNote("composeNote", "Couldn't send: " + ((res && res.error) || "unknown error"), "err"); }
+  }
+
+  // ---- SMTP settings ----
+  async function openSmtpSettings(opts) {
+    opts = opts || {};
+    if (!emailAvailable()) { toast("Email isn't available in this build"); return; }
+    var cfg;
+    try { cfg = await window.mailer.getConfig(); } catch (e) { cfg = {}; }
+    // First-run convenience: default to Gmail's SMTP and this user's address so
+    // only an app password is needed. Any saved config overrides these.
+    var GMAIL = { host: "smtp.gmail.com", port: 587, secure: false, user: "michael.alexander3@gmail.com", from: "michael.alexander3@gmail.com", imapHost: "imap.gmail.com", imapPort: 993, imapSecure: true };
+    var fresh = !cfg.host;
+    var d = fresh ? GMAIL : cfg;
+    $("smtpHost").value = d.host || "";
+    $("smtpPort").value = d.port || 587;
+    $("smtpSecure").checked = !!d.secure;
+    $("smtpUser").value = d.user || "";
+    $("smtpFrom").value = d.from || "";
+    $("imapHost").value = d.imapHost || (fresh ? "imap.gmail.com" : "");
+    $("imapPort").value = d.imapPort || 993;
+    $("imapSecure").checked = d.imapSecure !== false;
+    var pass = $("smtpPass");
+    pass.value = "";
+    pass.placeholder = cfg.hasPassword ? "•••• saved — leave blank to keep" : "Gmail app password (16 chars)";
+    var msg = opts.reason || "";
+    var cls = "";
+    if (fresh) { msg = (msg ? msg + " " : "") + "Gmail needs an app password (myaccount.google.com → Security → App passwords), not your normal login."; }
+    if (cfg.encryptionAvailable === false) { msg = (msg ? msg + " " : "") + "OS keychain unavailable — password will be stored unencrypted."; cls = "err"; }
+    setEfNote("smtpNote", msg, cls);
+    $("smtpScrim").classList.add("show");
+    // On a fresh Gmail prefill, the only thing missing is the password.
+    setTimeout(function () { (fresh ? $("smtpPass") : $("smtpHost")).focus(); }, 0);
+  }
+  function closeSmtp() { $("smtpScrim").classList.remove("show"); ta.focus(); }
+
+  function gatherSmtp() {
+    return {
+      host: $("smtpHost").value.trim(),
+      port: parseInt($("smtpPort").value, 10) || 587,
+      secure: $("smtpSecure").checked,
+      user: $("smtpUser").value.trim(),
+      from: $("smtpFrom").value.trim(),
+      password: $("smtpPass").value,
+      imapHost: $("imapHost").value.trim(),
+      imapPort: parseInt($("imapPort").value, 10) || 993,
+      imapSecure: $("imapSecure").checked,
+    };
+  }
+
+  async function saveSmtp() {
+    var cfg = gatherSmtp();
+    if (!cfg.host) { setEfNote("smtpNote", "Enter an SMTP host.", "err"); $("smtpHost").focus(); return null; }
+    var res;
+    try { res = await window.mailer.saveConfig(cfg); } catch (e) { res = { ok: false, error: String(e) }; }
+    if (res && res.ok) {
+      // Clear the password field but show it's retained.
+      $("smtpPass").value = "";
+      if (res.config && res.config.hasPassword) $("smtpPass").placeholder = "•••• saved — leave blank to keep";
+      setEfNote("smtpNote", "Saved.", "ok");
+      toast("Email settings saved");
+    } else {
+      setEfNote("smtpNote", "Couldn't save: " + ((res && res.error) || "unknown error"), "err");
+    }
+    return res;
+  }
+
+  async function testSmtp() {
+    // Persist current field values first so the test uses them.
+    var saved = await saveSmtp();
+    if (!saved || !saved.ok) return;
+    setEfNote("smtpNote", "Testing connection…", "");
+    var res;
+    try { res = await window.mailer.testConnection(); } catch (e) { res = { ok: false, error: String(e) }; }
+    if (res && res.ok) setEfNote("smtpNote", "Connection OK.", "ok");
+    else setEfNote("smtpNote", "Failed: " + ((res && res.error) || "unknown error"), "err");
+  }
+
+  // ---- Receiving: pull the latest inbox messages in as notes ----
+  var fetchingMail = false;
+
+  // Pull image attachments into the app's image store; return Markdown refs for
+  // them plus the names of any non-image (or skipped) attachments.
+  function importMailImages(m) {
+    var imageMd = [], otherNames = [];
+    (m.attachments || []).forEach(function (a) {
+      if (typeof a === "string") { otherNames.push(a); return; }   // older shape
+      if (a.dataUri) {
+        if (!state.images) state.images = {};
+        var id = uid();
+        state.images[id] = { data: a.dataUri, type: a.contentType || "image/png" };
+        imageMd.push("![" + (a.filename || "image") + "](img:" + id + ")");
+      } else {
+        otherNames.push((a.filename || "attachment") + (a.size ? " (" + Math.round(a.size / 1024) + " KB)" : ""));
+      }
+    });
+    return { imageMd: imageMd, otherNames: otherNames };
+  }
+
+  // Turn one parsed message into Markdown note text.
+  function mailToNoteBody(m, extra) {
+    extra = extra || { imageMd: [], otherNames: [] };
+    var lines = ["# " + (m.subject || "(no subject)"), ""];
+    if (m.from) lines.push("**From:** " + m.from);
+    if (m.to) lines.push("**To:** " + m.to);
+    if (m.date) { var d = new Date(m.date); lines.push("**Date:** " + (isNaN(d) ? m.date : d.toLocaleString())); }
+    if (extra.otherNames.length) lines.push("**Attachments:** " + extra.otherNames.join(", "));
+    lines.push("", "---", "");
+    lines.push((m.text || "").trim() || "_(no text content)_");
+    if (extra.imageMd.length) lines.push("", extra.imageMd.join("\n\n"));
+    return lines.join("\n");
+  }
+
+  async function fetchEmail() {
+    if (fetchingMail) return;
+    if (!(window.mailer && typeof window.mailer.fetchInbox === "function")) { toast("Receiving isn't available in this build"); return; }
+    var cfg;
+    try { cfg = await window.mailer.getConfig(); } catch (e) { cfg = null; }
+    // Need at least a username + password, and an IMAP host (or a Gmail SMTP host we can map).
+    if (!cfg || !cfg.hasPassword || !cfg.user || (!cfg.imapHost && cfg.host !== "smtp.gmail.com")) {
+      openSmtpSettings({ reason: "Set up your account (incl. IMAP) below to fetch mail." });
+      return;
+    }
+    fetchingMail = true;
+    toast("Fetching inbox…");
+    var res;
+    try { res = await window.mailer.fetchInbox({ limit: 25 }); }
+    catch (e) { res = { ok: false, error: String(e) }; }
+    fetchingMail = false;
+    if (!res || !res.ok) { toast("Fetch failed: " + ((res && res.error) || "unknown error")); return; }
+
+    var existing = {};
+    state.notes.forEach(function (n) { if (n.mailId) existing[n.mailId] = true; });
+    var added = 0, firstNewId = null, now = Date.now();
+    (res.messages || []).forEach(function (m) {
+      if (m.messageId && existing[m.messageId]) return;       // already imported
+      var ts = m.date ? +new Date(m.date) : now;
+      if (isNaN(ts)) ts = now;
+      var extra = importMailImages(m);
+      var nt = { id: uid(), body: mailToNoteBody(m, extra), updatedAt: ts, createdAt: ts, mailId: m.messageId || ("uid:" + m.uid), unread: true };
+      state.notes.push(nt);
+      existing[nt.mailId] = true;
+      if (!firstNewId) firstNewId = nt.id;
+      added++;
+    });
+
+    if (added) {
+      scheduleSave();
+      renderList();
+      renderTagBar();
+      if (firstNewId) openNote(firstNewId);
+      toast("Imported " + added + " new message" + (added === 1 ? "" : "s"));
+    } else {
+      toast("No new messages");
+    }
+  }
+
+  function importData(obj) {
+    if (!obj || !Array.isArray(obj.notes)) { toast("That file has no notes"); return; }
+    var incoming = obj.notes
+      .filter(function (n) { return n && typeof n.body === "string"; })
+      .map(function (n) { return { id: n.id || uid(), body: n.body, updatedAt: n.updatedAt || Date.now() }; });
+    if (!incoming.length) { toast("No notes found in that file"); return; }
+    var byId = {};
+    state.notes.forEach(function (n) { byId[n.id] = n; });
+    incoming.forEach(function (n) { byId[n.id] = n; });       // imported wins on id clash
+    state.notes = Object.keys(byId).map(function (k) { return byId[k]; });
+    mergeImages(obj.images);
+    state.activeId = state.notes.slice().sort(function (a, b) { return b.updatedAt - a.updatedAt; })[0].id;
+    openNote(state.activeId);
+    scheduleSave();
+    renderTagBar();
+    toast("Imported " + incoming.length + " note" + (incoming.length === 1 ? "" : "s"));
+  }
+
+  function importFile() {
+    var input = document.getElementById("importInput");
+    input.value = "";
+    input.onchange = function () {
+      var f = input.files && input.files[0];
+      if (!f) return;
+      var rd = new FileReader();
+      rd.onload = function () { try { importData(JSON.parse(rd.result)); } catch (e) { toast("That isn't valid JSON"); } };
+      rd.readAsText(f);
+    };
+    input.click();
+  }
+
+  // ---- Open .md files as notes ----------------------------------------------
+  // Pull any embedded base64 images out of the markdown and into the image
+  // store, so the note body stays clean (and the images become managed again).
+  function absorbDataImages(body) {
+    if (!state.images) state.images = {};
+    return body.replace(
+      /!\[([^\]]*)\]\(\s*(data:(image\/[a-zA-Z0-9.+-]+);base64,[^)\s]+)\s*\)/g,
+      function (m, alt, data, type) {
+        var id = uid();
+        state.images[id] = { data: data, type: type };
+        return "![" + alt + "](img:" + id + ")";
+      }
+    );
+  }
+  function noteFromMarkdownText(text, fname) {
+    var body = absorbDataImages(String(text == null ? "" : text).replace(/\r\n?/g, "\n"));
+    // Empty file → seed a title from the filename so it isn't "Untitled".
+    if (!body.split("\n").some(function (l) { return l.trim().length; })) {
+      var base = (fname || "Untitled").replace(/\.(md|markdown|txt)$/i, "");
+      body = "# " + base + "\n\n";
+    }
+    var nt = { id: uid(), body: body, updatedAt: Date.now() };
+    state.notes.push(nt);
+    return nt;
+  }
+  function finishOpen(made) {
+    made = (made || []).filter(Boolean);
+    if (!made.length) { toast("Couldn't open that"); return; }
+    openNote(made[made.length - 1].id);   // focus the last file opened
+    renderList();
+    scheduleSave();
+    renderFileMenu();
+    toast("Opened " + made.length + " file" + (made.length === 1 ? "" : "s"));
+  }
+  async function openMarkdownFiles() {
+    // Preferred: a native open dialog via the File System Access API.
+    if (typeof window !== "undefined" && "showOpenFilePicker" in window && !fileBlocked) {
+      try {
+        var handles = await window.showOpenFilePicker({
+          multiple: true,
+          types: [{ description: "Markdown / text", accept: { "text/markdown": [".md", ".markdown"], "text/plain": [".txt"] } }]
+        });
+        var made = [];
+        for (var k = 0; k < handles.length; k++) {
+          var file = await handles[k].getFile();
+          made.push(noteFromMarkdownText(await file.text(), file.name));
+        }
+        finishOpen(made);
+        return;
+      } catch (e) {
+        if (e && e.name === "AbortError") return;   // user cancelled the picker
+        // otherwise fall through to the input-based fallback
+      }
+    }
+    var input = document.getElementById("openMdInput");
+    input.value = "";
+    input.onchange = function () {
+      var files = input.files ? Array.prototype.slice.call(input.files) : [];
+      if (!files.length) return;
+      var made = new Array(files.length), pending = files.length;
+      files.forEach(function (f, idx) {
+        var rd = new FileReader();
+        rd.onload = function () { made[idx] = noteFromMarkdownText(rd.result, f.name); if (--pending === 0) finishOpen(made); };
+        rd.onerror = function () { made[idx] = null; if (--pending === 0) finishOpen(made); };
+        rd.readAsText(f);
+      });
+    };
+    input.click();
+  }
+
+  function latest(notes) {
+    return notes.reduce(function (m, n) { return Math.max(m, n && n.updatedAt || 0); }, 0);
+  }
+  function sortedFirstId() {
+    var s = state.notes.slice().sort(function (a, b) { return b.updatedAt - a.updatedAt; });
+    return s.length ? s[0].id : null;
+  }
+  function mergeNotes(fileNotes) {
+    var byId = {}, changed = false;
+    state.notes.forEach(function (n) { byId[n.id] = n; });
+    fileNotes.forEach(function (fn) {
+      if (!fn || typeof fn.body !== "string") return;
+      var id = fn.id || uid();
+      var incoming = { id: id, body: fn.body, updatedAt: fn.updatedAt || 0 };
+      var cur = byId[id];
+      if (!cur) { byId[id] = incoming; changed = true; }
+      else if ((incoming.updatedAt || 0) > (cur.updatedAt || 0)) { byId[id] = incoming; changed = true; }
+    });
+    return { merged: Object.keys(byId).map(function (k) { return byId[k]; }), changed: changed };
+  }
+  function reloadActive() {
+    var n = active();
+    ta.value = n ? n.body : "";
+    cur = clamp(cur, 0, ta.value.length);
+    undoStack.length = 0; redoStack.length = 0;
+    enterNormal(false);
+    if (previewing) renderPreview();
+    render();
+  }
+
+  // Duplicate cleanup: notes with identical text collapse to the newest copy.
+  function dedupeGroups() {
+    var groups = {};
+    state.notes.forEach(function (n) {
+      var key = (n.body || "").trim();
+      (groups[key] = groups[key] || []).push(n);
+    });
+    return groups;
+  }
+  function countDuplicates() {
+    var groups = dedupeGroups(), extra = 0;
+    Object.keys(groups).forEach(function (k) { if (groups[k].length > 1) extra += groups[k].length - 1; });
+    return extra;
+  }
+  function removeDuplicates() {
+    var activeBody = active() ? (active().body || "").trim() : null;
+    var groups = dedupeGroups(), kept = [];
+    Object.keys(groups).forEach(function (k) {
+      var arr = groups[k].slice().sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); });
+      kept.push(arr[0]);    // keep the most recently edited of each identical group
+    });
+    var removed = state.notes.length - kept.length;
+    if (!removed) { toast("No duplicate notes found"); return; }
+    state.notes = kept;
+    if (!active()) {
+      var survivor = activeBody !== null ? kept.find(function (n) { return (n.body || "").trim() === activeBody; }) : null;
+      state.activeId = survivor ? survivor.id : sortedFirstId();
+    }
+    reloadActive();
+    renderList();
+    scheduleSave();
+    renderFileMenu();
+    toast("Removed " + removed + " duplicate" + (removed === 1 ? "" : "s"));
+  }
+  async function readHandle(h) {
+    try {
+      var file = await h.getFile();
+      var text = await file.text();
+      if (!text.trim()) return null;
+      return JSON.parse(text);
+    } catch (e) { return null; }
+  }
+
+  // Link a handle as the live file: pull in anything newer from disk, then
+  // push the reconciled set back so the file is complete. Returns a status note.
+  async function adoptFile(h) {
+    fileHandle = h;
+    linkedName = h.name || "notes.json";
+    pendingHandle = null;
+    fileBlocked = false;
+    saveDot.classList.remove("reconnect");
+
+    var note = "";
+    var data = await readHandle(h);
+    if (data && Array.isArray(data.notes)) {
+      var appLatest = latest(state.notes);
+      var fileLatest = latest(data.notes);
+      var res = mergeNotes(data.notes);
+      mergeImages(data.images);
+      if (res.changed) {
+        state.notes = res.merged;
+        if (!active()) state.activeId = sortedFirstId();
+        reloadActive();
+        renderList();
+        note = fileLatest > appLatest ? " · loaded newer notes from file" : " · merged notes from file";
+      }
+    }
+    await writeFile();                  // make the file reflect the full set
+    await IDB.set("notesFile", fileHandle);
+    await Store.save(state);            // keep app storage in sync too
+    updateSaveDot(); renderFileMenu();
+    return note;
+  }
+
+  async function connectFile() {
+    if (!fsSupported) { toast("This browser can't autosave directly to a file"); return; }
+    var h;
+    try {
+      h = await window.showSaveFilePicker({
+        suggestedName: "modal-notes.json",
+        types: [{ description: "JSON", accept: { "application/json": [".json"] } }]
+      });
+    } catch (e) {
+      if (e && e.name === "AbortError") return;   // user cancelled the picker
+      fileBlocked = true;
+      toast("File access is blocked here — open this page in Chrome/Edge to autosave");
+      renderFileMenu();
+      return;
+    }
+    var note = await adoptFile(h);
+    toast("Autosaving to " + linkedName + note);
+  }
+
+  function pauseFile() {
+    fileHandle = null; linkedName = ""; pendingHandle = null;
+    saveDot.classList.remove("reconnect");
+    IDB.del("notesFile");
+    updateSaveDot(); renderFileMenu();
+    toast("Stopped autosaving to file");
+  }
+
+  // On load, try to silently resume the last linked file; if the browser needs
+  // a fresh permission grant, surface a one-click reconnect instead.
+  async function tryReconnectFile() {
+    if (!fsSupported) return;
+    var h = await IDB.get("notesFile");
+    if (!h) return;
+    try {
+      var perm = "granted";
+      if (h.queryPermission) perm = await h.queryPermission({ mode: "readwrite" });
+      if (perm === "granted") {
+        var note = await adoptFile(h);
+        toast("Reconnected to " + linkedName + note);
+      } else {
+        pendingHandle = h;
+        showReconnect();
+        renderFileMenu();
+        if (!state.notes.length) toast("Click ⟳ reconnect to load your notes");
+      }
+    } catch (e) { /* handle no longer valid; leave it for manual relink */ }
+  }
+  function showReconnect() {
+    saveDot.textContent = "⟳ reconnect";
+    saveDot.title = "Click to resume autosaving to " + ((pendingHandle && pendingHandle.name) || "your file");
+    saveDot.classList.add("reconnect");
+  }
+  async function reconnectFile() {
+    if (!pendingHandle) return;
+    try {
+      var perm = "granted";
+      if (pendingHandle.requestPermission) perm = await pendingHandle.requestPermission({ mode: "readwrite" });
+      if (perm !== "granted") { toast("Permission not granted"); return; }
+      var note = await adoptFile(pendingHandle);
+      toast("Reconnected to " + linkedName + note);
+    } catch (e) { toast("Couldn't reconnect"); }
+  }
+
+  async function writeFile() {
+    if (!fileHandle) return true;
+    try {
+      if (fileHandle.queryPermission) {
+        var q = await fileHandle.queryPermission({ mode: "readwrite" });
+        if (q !== "granted" && fileHandle.requestPermission) {
+          q = await fileHandle.requestPermission({ mode: "readwrite" });
+          if (q !== "granted") return false;
+        }
+      }
+      var w = await fileHandle.createWritable();
+      await w.write(JSON.stringify(exportData(), null, 2));
+      await w.close();
+      return true;
+    } catch (e) { return false; }   // storage still holds the data
+  }
+
+  function buildFileMenu() {
+    var menu = document.createElement("div");
+    menu.className = "theme-menu"; menu.id = "fileMenu";
+    document.body.appendChild(menu);
+    return menu;
+  }
+  function renderFileMenu() {
+    var menu = document.getElementById("fileMenu") || buildFileMenu();
+    menu.innerHTML = "";
+    var head = document.createElement("div"); head.className = "tm-head"; head.textContent = "Notes file"; menu.appendChild(head);
+
+    var status = document.createElement("div"); status.className = "tm-status";
+    if (fileHandle) status.textContent = "Autosaving every change to " + linkedName + ".";
+    else if (pendingHandle) status.textContent = "Found your last file (" + ((pendingHandle.name) || "notes.json") + "). Reconnect to resume autosaving — your browser needs one click to allow it.";
+    else if (!fsSupported) status.textContent = "Notes already save automatically inside the app. Use the backups below for .json files. Direct file autosave needs Chrome or Edge.";
+    else if (fileBlocked) status.textContent = "Direct file access is blocked in this sandbox. Download this page and open it in Chrome/Edge to autosave to a file. Backups below work anywhere.";
+    else status.textContent = "Link a .json file and every change autosaves straight to it.";
+    menu.appendChild(status);
+
+    function row(icon, label, fn) {
+      var o = document.createElement("div"); o.className = "theme-opt";
+      var ic = document.createElement("span"); ic.className = "ic"; ic.textContent = icon;
+      var l = document.createElement("span"); l.textContent = label;
+      o.appendChild(ic); o.appendChild(l);
+      o.addEventListener("click", fn);
+      menu.appendChild(o);
+    }
+
+    if (fsSupported && !fileBlocked) {
+      if (fileHandle) {
+        row("⇄", "Switch to a different file…", function () { closeFileMenu(); connectFile(); });
+        row("◌", "Pause file autosave", function () { closeFileMenu(); pauseFile(); });
+      } else if (pendingHandle) {
+        row("⟳", "Reconnect to " + ((pendingHandle.name) || "notes.json"), function () { closeFileMenu(); reconnectFile(); });
+        row("◌", "Forget this file", function () { closeFileMenu(); pauseFile(); });
+      } else {
+        row("◉", "Autosave to a file…", function () { closeFileMenu(); connectFile(); });
+      }
+    }
+    row("⤒", "Open .md file…", function () { closeFileMenu(); openMarkdownFiles(); });
+    if (active()) row("⤓", "Save this note as .md…", function () { closeFileMenu(); saveNoteAsMd(active()); });
+    row("↓", "Download backup (.json)", function () { closeFileMenu(); downloadExport(); });
+    row("⧉", "Copy notes as JSON", function () { closeFileMenu(); copyJson(); });
+    row("↑", "Import from .json…", function () { closeFileMenu(); importFile(); });
+
+    var dups = countDuplicates();
+    if (dups > 0) row("⊟", "Remove " + dups + " duplicate note" + (dups === 1 ? "" : "s"), function () { closeFileMenu(); removeDuplicates(); });
+    var unusedImgs = unusedImageIds().length;
+    if (unusedImgs > 0) row("⊘", "Remove " + unusedImgs + " unused image" + (unusedImgs === 1 ? "" : "s"), function () { closeFileMenu(); removeUnusedImages(); });
+    var trashCount = trashedNotes().length;
+    if (trashCount > 0) {
+      row("↺", "Restore last deleted note", function () { closeFileMenu(); restoreLastDeleted(); });
+      row("🗑", "Empty trash (" + trashCount + " note" + (trashCount === 1 ? "" : "s") + ")", function () { closeFileMenu(); emptyTrash(); });
+    }
+  }
+  function toggleFileMenu() {
+    var menu = document.getElementById("fileMenu") || buildFileMenu();
+    if (menu.classList.contains("show")) { closeFileMenu(); return; }
+    renderFileMenu();
+    var r = document.getElementById("fileBtn").getBoundingClientRect();
+    menu.style.top = (r.bottom + 6) + "px";
+    menu.style.right = (window.innerWidth - r.right) + "px";
+    menu.classList.add("show");
+  }
+  function closeFileMenu() { var m = document.getElementById("fileMenu"); if (m) m.classList.remove("show"); }
+
+  // ---------------------------------------------------------------------------
+  // Note helpers
+  // ---------------------------------------------------------------------------
+  function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+  function titleOf(note) {
+    var first = (note.body || "").split("\n").find(function (l) { return l.trim().length; });
+    if (!first) return "Untitled";
+    return first.replace(/^#+\s*/, "").trim().slice(0, 60) || "Untitled";
+  }
+  function snippetOf(note) {
+    var lines = (note.body || "").split("\n").filter(function (l) { return l.trim().length; });
+    return (lines[1] || lines[0] || "").trim().slice(0, 60);
+  }
+  function relTime(ts) {
+    var d = Math.floor((Date.now() - ts) / 1000);
+    if (d < 60) return "just now";
+    if (d < 3600) return Math.floor(d / 60) + "m ago";
+    if (d < 86400) return Math.floor(d / 3600) + "h ago";
+    return Math.floor(d / 86400) + "d ago";
+  }
+  function active() { return state.notes.find(function (n) { return n.id === state.activeId; }); }
+
+  // ---------------------------------------------------------------------------
+  // Save (debounced)
+  // ---------------------------------------------------------------------------
+  var saveTimer = null;
+  function scheduleSave() {
+    saveDot.textContent = "•••";
+    saveDot.classList.add("dirty");
+    modDot.textContent = "[+]";
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(commitSave, 450);
+  }
+  async function commitSave() {
+    var ok = await Store.save(state);
+    saveDot.classList.remove("dirty");
+    modDot.textContent = "";
+    if (fileHandle) {
+      var wrote = await writeFile();
+      if (!wrote) { fileHandle = null; linkedName = ""; IDB.del("notesFile"); toast("Lost the file link — reconnect from the file menu"); }
+    }
+    updateSaveDot(ok);
+  }
+  function updateSaveDot(storageOk) {
+    if (fileHandle) {
+      saveDot.classList.remove("reconnect");
+      saveDot.textContent = "→ " + linkedName;
+      saveDot.title = "Autosaving to " + linkedName;
+    } else if (pendingHandle) {
+      showReconnect();
+    } else {
+      saveDot.classList.remove("reconnect");
+      saveDot.textContent = hasStore ? (storageOk === false ? "save failed" : "saved") : "memory only";
+      saveDot.title = hasStore ? "Saved in the app automatically" : "Notes persist for this session only";
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Rendering
+  // ---------------------------------------------------------------------------
+  var MODE_COLOR = { normal: "--m-normal", insert: "--m-insert", visual: "--m-visual", command: "--m-command" };
+
+  function setModeColor() {
+    var v = getComputedStyle(document.documentElement).getPropertyValue(MODE_COLOR[mode]);
+    document.documentElement.style.setProperty("--cursor", v.trim());
+  }
+
+  function render() {
+    // mode label + colour
+    modeBlock.textContent = mode.toUpperCase();
+    setModeColor();
+
+    if (mode === "visual") {
+      var a = Math.min(anchor, cur), b = Math.max(anchor, cur);
+      try { ta.setSelectionRange(a, b + 1); } catch (e) {}
+    } else if (mode === "normal") {
+      var ch = ta.value[cur];
+      try {
+        if (ch === undefined || ch === "\n") ta.setSelectionRange(cur, cur);
+        else ta.setSelectionRange(cur, cur + 1);
+      } catch (e) {}
+    }
+    // insert mode: leave the native caret alone
+
+    updateStatus();
+    hint.parentElement.classList.toggle("show-hint", ta.value.length === 0 && mode !== "insert" && !previewing);
+    updateGutter();
+    scrollCursorIntoView();
+    if (previewing && ta.value !== lastPreviewText) renderPreview();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Line numbers + keeping the cursor in view (a hidden mirror measures layout
+  // so both stay correct even when lines wrap).
+  // ---------------------------------------------------------------------------
+  var mirror = $("editorMirror");
+  var gutter = $("gutter");
+  var gutterInner = $("gutterInner");
+  var numbersOn = true;
+  var lnumEls = [];
+  var lastGutterText = null;
+  var MIRROR_PROPS = ["fontFamily", "fontSize", "fontWeight", "lineHeight", "letterSpacing",
+    "whiteSpace", "wordBreak", "overflowWrap", "tabSize",
+    "paddingTop", "paddingRight", "paddingBottom", "paddingLeft", "boxSizing"];
+
+  function syncMirror() {
+    var cs = getComputedStyle(ta);
+    MIRROR_PROPS.forEach(function (p) { mirror.style[p] = cs[p]; });
+    mirror.style.width = ta.clientWidth + "px";
+  }
+  function caretXY() {
+    syncMirror();
+    var pos = mode === "insert" ? ta.selectionStart : cur;
+    mirror.textContent = ta.value.slice(0, pos);
+    var marker = document.createElement("span");
+    marker.textContent = "\u200b";
+    mirror.appendChild(marker);
+    var lh = parseFloat(getComputedStyle(ta).lineHeight) || 24;
+    return { top: marker.offsetTop, left: marker.offsetLeft, lh: lh };
+  }
+  function scrollCursorIntoView() {
+    if (previewing) return;
+    var c = caretXY();
+    var padV = c.lh, padH = 28;
+    if (c.top - padV < ta.scrollTop) ta.scrollTop = Math.max(0, c.top - padV);
+    else if (c.top + c.lh + padV > ta.scrollTop + ta.clientHeight) ta.scrollTop = c.top + c.lh + padV - ta.clientHeight;
+    if (c.left - padH < ta.scrollLeft) ta.scrollLeft = Math.max(0, c.left - padH);
+    else if (c.left + padH > ta.scrollLeft + ta.clientWidth) ta.scrollLeft = c.left + padH - ta.clientWidth;
+    syncGutterScroll();
+  }
+  function rebuildGutter() {
+    syncMirror();
+    var lines = ta.value.split("\n");
+    mirror.innerHTML = "";
+    var frag = document.createDocumentFragment();
+    var markers = [];
+    for (var i = 0; i < lines.length; i++) {
+      var m = document.createElement("span");
+      m.textContent = "\u200b";
+      frag.appendChild(m); markers.push(m);
+      frag.appendChild(document.createTextNode(lines[i]));
+      if (i < lines.length - 1) frag.appendChild(document.createTextNode("\n"));
+    }
+    mirror.appendChild(frag);
+    gutterInner.innerHTML = "";
+    lnumEls = [];
+    for (var j = 0; j < markers.length; j++) {
+      var d = document.createElement("div");
+      d.className = "lnum";
+      d.style.top = markers[j].offsetTop + "px";
+      d.textContent = (j + 1);
+      gutterInner.appendChild(d);
+      lnumEls.push(d);
+    }
+  }
+  function highlightCurrentLine() {
+    var idx = ta.value.slice(0, mode === "insert" ? ta.selectionStart : cur).split("\n").length - 1;
+    for (var i = 0; i < lnumEls.length; i++) lnumEls[i].classList.toggle("cur", i === idx);
+  }
+  function syncGutterScroll() {
+    if (numbersOn) gutterInner.style.transform = "translateY(" + (-ta.scrollTop) + "px)";
+  }
+  function updateGutter() {
+    if (!numbersOn || previewing) return;
+    if (ta.value !== lastGutterText) { rebuildGutter(); lastGutterText = ta.value; }
+    highlightCurrentLine();
+    syncGutterScroll();
+  }
+  function refreshGutterLayout() {     // force a rebuild when geometry (not text) changes
+    lastGutterText = null;
+    render();
+  }
+  function toggleNumbers() {
+    numbersOn = !numbersOn;
+    app.classList.toggle("with-numbers", numbersOn);
+    $("numBtn").classList.toggle("on", numbersOn);
+    state.numbers = numbersOn;
+    scheduleSave();
+    lastGutterText = null;
+    render();
+    ta.focus();
+  }
+
+  function updateStatus() {
+    var before = ta.value.slice(0, mode === "insert" ? ta.selectionStart : cur);
+    var line = before.split("\n");
+    posEl.textContent = "Ln " + line.length + ", Col " + (line[line.length - 1].length + 1);
+    var words = ta.value.trim() ? ta.value.trim().split(/\s+/).length : 0;
+    var wcEl = document.getElementById("wc");
+    if (wcEl) wcEl.textContent = words + "w";
+    var n = active();
+    fileName.textContent = n ? titleOf(n).toLowerCase().replace(/\s+/g, "-").slice(0, 28) + ".md" : "untitled";
+  }
+
+  // ---------------------------------------------------------------------------
+  // Buffer mutation
+  // ---------------------------------------------------------------------------
+  function pushUndo() {
+    undoStack.push({ v: ta.value, c: cur });
+    if (undoStack.length > 250) undoStack.shift();
+    redoStack.length = 0;
+  }
+  function setBuffer(v, c) {
+    ta.value = v;
+    cur = clamp(c, 0, v.length);
+    syncNote();
+    render();
+  }
+  function syncNote() {
+    var n = active();
+    if (!n) return;
+    n.body = ta.value;
+    n.updatedAt = Date.now();
+    renderListItem(n.id);
+    renderTagBar();
+    scheduleSave();
+  }
+  function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
+
+  // line geometry
+  function lineStart(i) { var p = ta.value.lastIndexOf("\n", i - 1); return p + 1; }
+  function lineEnd(i) { var p = ta.value.indexOf("\n", i); return p === -1 ? ta.value.length : p; }
+  function colOf(i) { return i - lineStart(i); }
+
+  // ---------------------------------------------------------------------------
+  // Motions
+  // ---------------------------------------------------------------------------
+  function mLeft(n) { var ls = lineStart(cur); cur = Math.max(ls, cur - n); desiredCol = null; }
+  function mRight(n) {
+    var le = lineEnd(cur), ls = lineStart(cur);
+    var max = le > ls ? le - 1 : ls;        // can't sit past last char
+    cur = Math.min(max, cur + n); desiredCol = null;
+  }
+  function mVert(dir, n) {
+    if (desiredCol == null) desiredCol = colOf(cur);
+    for (var k = 0; k < n; k++) {
+      if (dir < 0) {
+        var ls = lineStart(cur);
+        if (ls === 0) break;
+        cur = clampToLine(lineStart(ls - 1));
+      } else {
+        var le = lineEnd(cur);
+        if (le >= ta.value.length) break;
+        cur = clampToLine(le + 1);
+      }
+    }
+  }
+  function clampToLine(ls) {
+    var le = lineEnd(ls);
+    var target = ls + desiredCol;
+    var max = le > ls ? le - 1 : ls;
+    return Math.min(Math.max(ls, target), max);
+  }
+  function mLineStart() { cur = lineStart(cur); desiredCol = null; }
+  function mFirstNonBlank() {
+    var ls = lineStart(cur), le = lineEnd(cur), i = ls;
+    while (i < le && /\s/.test(ta.value[i])) i++;
+    cur = i; desiredCol = null;
+  }
+  function mLineEnd() { var le = lineEnd(cur), ls = lineStart(cur); cur = le > ls ? le - 1 : ls; desiredCol = null; }
+  function mTop() { cur = 0; desiredCol = null; }
+  function mBottom() { cur = lineStart(ta.value.length); desiredCol = null; }
+
+  function isW(c) { return c && /\S/.test(c); }
+  function mWord(n) {
+    var v = ta.value;
+    for (var k = 0; k < n; k++) {
+      while (cur < v.length && isW(v[cur])) cur++;
+      while (cur < v.length && !isW(v[cur])) cur++;
+    }
+    cur = Math.min(cur, Math.max(0, v.length - 1));
+    desiredCol = null;
+  }
+  function mBack(n) {
+    var v = ta.value;
+    for (var k = 0; k < n; k++) {
+      cur--;
+      while (cur > 0 && !isW(v[cur])) cur--;
+      while (cur > 0 && isW(v[cur - 1])) cur--;
+    }
+    cur = Math.max(0, cur); desiredCol = null;
+  }
+  function mEnd(n) {
+    var v = ta.value;
+    for (var k = 0; k < n; k++) {
+      cur++;
+      while (cur < v.length && !isW(v[cur])) cur++;
+      while (cur < v.length - 1 && isW(v[cur + 1])) cur++;
+    }
+    cur = Math.min(cur, Math.max(0, v.length - 1)); desiredCol = null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Mode switches
+  // ---------------------------------------------------------------------------
+  function enterInsert(at) {
+    pushUndo();
+    mode = "insert";
+    syncView();
+    cur = clamp(at == null ? cur : at, 0, ta.value.length);
+    ta.setSelectionRange(cur, cur);
+    render();
+    ta.focus();
+  }
+  function enterNormal(fromInsert) {
+    if (fromInsert) {
+      cur = ta.selectionStart;
+      var ls = lineStart(cur);
+      if (cur > ls) cur--;          // Vim nudges left on Esc
+    }
+    mode = "normal";
+    pending = ""; count = ""; awaitChar = "";
+    syncView();
+    render();
+  }
+  function enterVisual() { mode = "visual"; anchor = cur; syncView(); render(); }
+
+  // Show the rendered preview whenever you're not actively editing; reveal the
+  // raw editor in Insert and Visual modes (where you need to see the text).
+  var autoPreview = true;
+  var lastPreviewText = null;
+  function effectivePreview() { return autoPreview && (mode === "normal" || mode === "command"); }
+  function syncView() {
+    var show = effectivePreview();
+    if (show !== previewing) {
+      previewing = show;
+      app.classList.toggle("preview-on", previewing);
+    }
+    if (previewing) renderPreview();
+    if (mode === "normal" || mode === "visual") ta.focus();
+  }
+  function toggleAutoPreview() {
+    autoPreview = !autoPreview;
+    $("prevBtn").classList.toggle("on", autoPreview);
+    state.autoPreview = autoPreview;
+    scheduleSave();
+    syncView();
+    render();
+    ta.focus();
+  }
+  // While reading (preview shown), navigation keys scroll the rendered view.
+  function previewLineH() { return parseFloat(getComputedStyle(preview).lineHeight) || 24; }
+  function previewScrollKey(e, k, n) {
+    var ph = preview.clientHeight, lh = previewLineH();
+    if (e.ctrlKey) {
+      if (k === "d") { preview.scrollTop += ph / 2; return true; }
+      if (k === "u") { preview.scrollTop -= ph / 2; return true; }
+      if (k === "f") { preview.scrollTop += ph * 0.9; return true; }
+      if (k === "b") { preview.scrollTop -= ph * 0.9; return true; }
+      return false;
+    }
+    switch (k) {
+      case "j": case "ArrowDown": preview.scrollTop += lh * n; return true;
+      case "k": case "ArrowUp": preview.scrollTop -= lh * n; return true;
+      case "PageDown": preview.scrollTop += ph * 0.9; return true;
+      case "PageUp": preview.scrollTop -= ph * 0.9; return true;
+      case "G": preview.scrollTop = preview.scrollHeight; return true;
+      case "h": case "l": case "ArrowLeft": case "ArrowRight":
+      case "0": case "$": case "^": case "w": case "b": case "e":
+        return true;   // no meaning while reading — swallow so they don't move the hidden cursor
+      default: return false;   // i, a, o, v, :, /, g…, n, etc. fall through to normal handling
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Operators
+  // ---------------------------------------------------------------------------
+  function deleteRange(a, b, linewise) {
+    pushUndo();
+    register.text = ta.value.slice(a, b);
+    register.linewise = !!linewise;
+    setBuffer(ta.value.slice(0, a) + ta.value.slice(b), a);
+  }
+  function yankRange(a, b, linewise) {
+    register.text = ta.value.slice(a, b);
+    register.linewise = !!linewise;
+  }
+  function lineSpan(n) {
+    var a = lineStart(cur), b = a;
+    for (var k = 0; k < n; k++) { b = lineEnd(b); if (b < ta.value.length) b++; }
+    return { a: a, b: b };
+  }
+
+  function op_dd(n) { var s = lineSpan(n); deleteRange(s.a, s.b, true); cur = clamp(lineStart(s.a), 0, ta.value.length); mFirstNonBlank(); render(); }
+  function op_yy(n) { var s = lineSpan(n); yankRange(s.a, s.b, true); render(); }
+  function op_cc(n) {
+    var s = lineSpan(n);
+    var endsNL = ta.value[s.b - 1] === "\n";
+    deleteRange(s.a, endsNL ? s.b - 1 : s.b, false);
+    enterInsert(s.a);
+  }
+  function op_dw(n) { var start = cur, save = cur; mWord(n); var e = Math.max(cur, start); cur = save; deleteRange(start, Math.max(start, e), false); render(); }
+  function op_cw(n) { var start = cur, save = cur; mEnd(n); var e = cur + 1; cur = save; deleteRange(start, Math.max(start, e), false); enterInsert(start); }
+  function op_dollar(change) {
+    var le = lineEnd(cur);
+    deleteRange(cur, le, false);
+    if (change) enterInsert(cur); else { mLineEnd(); render(); }
+  }
+
+  function paste(after) {
+    if (!register.text) return;
+    pushUndo();
+    if (register.linewise) {
+      var insertAt = after ? (lineEnd(cur) < ta.value.length ? lineEnd(cur) + 1 : ta.value.length) : lineStart(cur);
+      var text = register.text;
+      if (after && lineEnd(cur) >= ta.value.length) text = "\n" + text.replace(/\n$/, "");
+      var nv = ta.value.slice(0, insertAt) + text + ta.value.slice(insertAt);
+      setBuffer(nv, insertAt);
+      mFirstNonBlank(); render();
+    } else {
+      var at = after ? Math.min(cur + 1, ta.value.length) : cur;
+      setBuffer(ta.value.slice(0, at) + register.text + ta.value.slice(at), at + register.text.length - 1);
+    }
+  }
+
+  function delChar(n) {
+    var le = lineEnd(cur);
+    var end = Math.min(cur + n, le);
+    if (end <= cur) return;
+    deleteRange(cur, end, false);
+    var ls = lineStart(cur), nle = lineEnd(cur);
+    if (cur >= nle && nle > ls) cur = nle - 1;
+    render();
+  }
+  function replaceChar(ch) {
+    var le = lineEnd(cur);
+    if (cur >= le) return;
+    pushUndo();
+    setBuffer(ta.value.slice(0, cur) + ch + ta.value.slice(cur + 1), cur);
+  }
+  function joinLines() {
+    var le = lineEnd(cur);
+    if (le >= ta.value.length) return;
+    pushUndo();
+    var rest = ta.value.slice(le + 1);
+    var trimmed = rest.replace(/^\s+/, "");
+    setBuffer(ta.value.slice(0, le) + " " + trimmed, le);
+  }
+  function openLine(below) {
+    pushUndo();
+    var at = below ? lineEnd(cur) : lineStart(cur);
+    if (below) {
+      setBuffer(ta.value.slice(0, at) + "\n" + ta.value.slice(at), at + 1);
+    } else {
+      setBuffer(ta.value.slice(0, at) + "\n" + ta.value.slice(at), at);
+    }
+    mode = "insert"; ta.setSelectionRange(cur, cur); render(); ta.focus();
+  }
+
+  function undo() {
+    if (!undoStack.length) return;
+    redoStack.push({ v: ta.value, c: cur });
+    var s = undoStack.pop();
+    ta.value = s.v; cur = clamp(s.c, 0, s.v.length);
+    syncNote(); render();
+  }
+  function redo() {
+    if (!redoStack.length) return;
+    undoStack.push({ v: ta.value, c: cur });
+    var s = redoStack.pop();
+    ta.value = s.v; cur = clamp(s.c, 0, s.v.length);
+    syncNote(); render();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Search
+  // ---------------------------------------------------------------------------
+  function doSearch(term, forward) {
+    if (!term) return;
+    lastSearch = term;
+    var v = ta.value, from;
+    if (forward) {
+      from = v.indexOf(term, cur + 1);
+      if (from === -1) from = v.indexOf(term, 0);
+    } else {
+      from = v.lastIndexOf(term, cur - 1);
+      if (from === -1) from = v.lastIndexOf(term);
+    }
+    if (from !== -1) { cur = from; desiredCol = null; render(); }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Visual-mode motions (extend selection)
+  // ---------------------------------------------------------------------------
+  function visualMotion(fn) { fn(); render(); }
+  function visualBounds() { var a = Math.min(anchor, cur), b = Math.max(anchor, cur) + 1; return { a: a, b: b }; }
+
+  // ---------------------------------------------------------------------------
+  // Key handling — Normal & Visual
+  // ---------------------------------------------------------------------------
+  function onKeyDown(e) {
+    // Ctrl-P — quick-open palette, from any mode
+    if (e.ctrlKey && !e.shiftKey && !e.metaKey && (e.key === "p" || e.key === "P")) {
+      e.preventDefault();
+      openLinkPalette({ action: "open", origin: mode === "insert" ? "insert" : "normal" });
+      return;
+    }
+    if (mode === "insert") {
+      if (e.key === "Escape") { e.preventDefault(); enterNormal(true); }
+      else if (e.key === "Tab") { e.preventDefault(); document.execCommand("insertText", false, "  "); }
+      else if (e.key === "Enter") {
+        var pos = ta.selectionStart;
+        var lineS = ta.value.lastIndexOf("\n", pos - 1) + 1;
+        var lineText = ta.value.slice(lineS, pos);
+        var bulletM = lineText.match(/^(\s*)([-*+])\s+(\[[ xX]\]\s?)?/);
+        var olM = lineText.match(/^(\s*)(\d+)\.\s+/);
+        if (bulletM && lineText.slice(bulletM[0].length).trim().length > 0) {
+          e.preventDefault();
+          var prefix = bulletM[1] + bulletM[2] + " " + (bulletM[3] ? "[ ] " : "");
+          document.execCommand("insertText", false, "\n" + prefix);
+        } else if (bulletM && lineText.slice(bulletM[0].length).trim().length === 0) {
+          // empty bullet — cancel the list (delete the bullet prefix)
+          e.preventDefault();
+          ta.value = ta.value.slice(0, lineS) + ta.value.slice(pos);
+          ta.selectionStart = ta.selectionEnd = lineS;
+          syncNote(); updateStatus();
+        } else if (olM && lineText.slice(olM[0].length).trim().length > 0) {
+          e.preventDefault();
+          var nextNum = parseInt(olM[2], 10) + 1;
+          document.execCommand("insertText", false, "\n" + olM[1] + nextNum + ". ");
+        } else if (olM && lineText.slice(olM[0].length).trim().length === 0) {
+          e.preventDefault();
+          ta.value = ta.value.slice(0, lineS) + ta.value.slice(pos);
+          ta.selectionStart = ta.selectionEnd = lineS;
+          syncNote(); updateStatus();
+        }
+      }
+      return;
+    }
+    // normal or visual
+    handleCommandKey(e);
+  }
+
+  function handleCommandKey(e) {
+    var k = e.key;
+    if (e.metaKey) return;
+    if (e.ctrlKey && k !== "r" && k !== "d" && k !== "u" && k !== "o" && k !== "i" && !(previewing && mode === "normal" && (k === "f" || k === "b"))) return;
+
+    // r<char> replace
+    if (awaitChar === "r") {
+      e.preventDefault();
+      awaitChar = "";
+      if (k.length === 1) replaceChar(k);
+      return;
+    }
+
+    // numeric count
+    if (/^[1-9]$/.test(k) || (count !== "" && k === "0")) { count += k; e.preventDefault(); return; }
+    var n = Math.min(parseInt(count || "1", 10), 2000);
+
+    // reading mode: Tab / Shift+Tab step between notes
+    if (previewing && mode === "normal" && k === "Tab") {
+      e.preventDefault(); count = "";
+      stepNote(e.shiftKey ? -1 : 1);
+      return;
+    }
+
+    // reading mode: scroll the preview instead of moving the hidden cursor
+    if (previewing && mode === "normal" && previewScrollKey(e, k, n)) {
+      e.preventDefault(); count = ""; return;
+    }
+
+    // ctrl combos
+    if (e.ctrlKey) {
+      if (k === "r") { e.preventDefault(); redo(); reset(); return; }
+      if (k === "d") { e.preventDefault(); mVert(1, 12); render(); reset(); return; }
+      if (k === "u") { e.preventDefault(); mVert(-1, 12); render(); reset(); return; }
+      if (k === "o") { e.preventDefault(); jumpNote(-1); reset(); return; }
+      if (k === "i") { e.preventDefault(); jumpNote(1); reset(); return; }
+      return;
+    }
+
+    // multi-key sequences
+    if (pending === "g") {
+      e.preventDefault(); pending = "";
+      if (k === "g") {
+        if (previewing && mode === "normal") preview.scrollTop = 0;
+        else { count ? gotoLine(n) : mTop(); render(); }
+      }
+      else if (k === "f") { followLinkUnderCursor(); }
+      reset(); return;
+    }
+    if (pending === "z") {
+      e.preventDefault(); pending = "";
+      if (k === "a") toggleFoldAtCursor();
+      else if (k === "M") foldAll();
+      else if (k === "R") unfoldAll();
+      reset(); return;
+    }
+    if (pending === "d") { e.preventDefault(); pending = ""; opMotion("d", k, n); reset(); return; }
+    if (pending === "y") { e.preventDefault(); pending = ""; opMotion("y", k, n); reset(); return; }
+    if (pending === "c") { e.preventDefault(); pending = ""; opMotion("c", k, n); reset(); return; }
+
+    var handled = true;
+    switch (k) {
+      // motions
+      case "h": case "ArrowLeft": (mode === "visual" ? visualMotion : run)(function(){ mLeft(n); }); break;
+      case "l": case "ArrowRight": (mode === "visual" ? visualMotion : run)(function(){ mRight(n); }); break;
+      case "j": case "ArrowDown": (mode === "visual" ? visualMotion : run)(function(){ mVert(1, n); }); break;
+      case "k": case "ArrowUp": (mode === "visual" ? visualMotion : run)(function(){ mVert(-1, n); }); break;
+      case "w": (mode === "visual" ? visualMotion : run)(function(){ mWord(n); }); break;
+      case "b": (mode === "visual" ? visualMotion : run)(function(){ mBack(n); }); break;
+      case "e": (mode === "visual" ? visualMotion : run)(function(){ mEnd(n); }); break;
+      case "0": run(mLineStart); break;
+      case "^": run(mFirstNonBlank); break;
+      case "$": (mode === "visual" ? visualMotion : run)(mLineEnd); break;
+      case "G": run(function(){ count ? gotoLine(n) : mBottom(); }); break;
+      case "g": pending = "g"; break;
+
+      // search
+      case "/": openCmd("/"); break;
+      case "n": run(function(){ doSearch(lastSearch, true); }); break;
+      case "N": run(function(){ doSearch(lastSearch, false); }); break;
+
+      // command line
+      case ":": openCmd(":"); break;
+
+      default:
+        if (mode === "visual") handled = visualKey(k);
+        else handled = normalKey(k, n);
+    }
+    if (handled || (k.length === 1 && !e.ctrlKey && !e.metaKey)) e.preventDefault();
+    if (!pending) count = "";
+  }
+
+  function run(fn) { fn(); render(); }
+  function reset() { count = ""; }
+
+  function gotoLine(num) {
+    var lines = ta.value.split("\n");
+    var idx = clamp(num, 1, lines.length) - 1;
+    var pos = 0; for (var i = 0; i < idx; i++) pos += lines[i].length + 1;
+    cur = pos; mFirstNonBlank();
+  }
+
+  function normalKey(k, n) {
+    switch (k) {
+      case "i": enterInsert(cur); return true;
+      case "a": enterInsert(Math.min(cur + 1, lineEnd(cur))); return true;
+      case "I": mFirstNonBlank(); enterInsert(cur); return true;
+      case "A": enterInsert(lineEnd(cur)); return true;
+      case "o": openLine(true); return true;
+      case "O": openLine(false); return true;
+      case "x": delChar(n); return true;
+      case "p": paste(true); return true;
+      case "P": paste(false); return true;
+      case "d": pending = "d"; return true;
+      case "y": pending = "y"; return true;
+      case "c": pending = "c"; return true;
+      case "r": awaitChar = "r"; return true;
+      case "z": pending = "z"; return true;
+      case "J": joinLines(); return true;
+      case " ": toggleAutoPreview(); return true;
+      case "u": undo(); return true;
+      case "v": enterVisual(); return true;
+      case "D": op_dollar(false); return true;
+      case "C": op_dollar(true); return true;
+      case "Enter": { var l = linkAt(cur); if (l) { openOrCreate(l.title); } else { mVert(1, n); render(); } return true; }
+      case "Backspace": mLeft(n); render(); return true;
+      case "Delete": delChar(n); return true;
+      case "Tab": return true;
+      case "Escape": pending = ""; count = ""; render(); return true;
+      default: return false;
+    }
+  }
+
+  function opMotion(op, k, n) {
+    switch (k) {
+      case "d": if (op === "d") return op_dd(n); break;
+      case "y": if (op === "y") return op_yy(n); break;
+      case "c": if (op === "c") return op_cc(n); break;
+      case "w": return op === "d" ? op_dw(n) : op === "c" ? op_cw(n) : (function(){ var s=cur; mWord(n); yankRange(s,cur,false); cur=s; render(); })();
+      case "$": return op === "y" ? (function(){ yankRange(cur, lineEnd(cur), false); render(); })() : op_dollar(op === "c");
+      case "0": var s0 = cur, ls = lineStart(cur); if (op === "y") { yankRange(ls, s0, false); cur = ls; } else { deleteRange(ls, s0, false); } render(); return;
+    }
+  }
+
+  function visualKey(k) {
+    var bnds;
+    switch (k) {
+      case "d": case "x": case "Backspace": case "Delete": bnds = visualBounds(); deleteRange(bnds.a, bnds.b, false); cur = clamp(bnds.a, 0, ta.value.length); mode = "normal"; var nle = lineEnd(cur); if (cur >= nle && nle > lineStart(cur)) cur = nle - 1; render(); return true;
+      case "y": bnds = visualBounds(); yankRange(bnds.a, bnds.b, false); cur = bnds.a; mode = "normal"; render(); return true;
+      case "c": bnds = visualBounds(); deleteRange(bnds.a, bnds.b, false); enterInsert(bnds.a); return true;
+      case "o": var t = anchor; anchor = cur; cur = t; render(); return true;
+      case "Escape": mode = "normal"; render(); return true;
+      default: return false;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Command / search line
+  // ---------------------------------------------------------------------------
+  function openCmd(lead) {
+    mode = "command";
+    cmdLead.textContent = lead;
+    cmdInput.value = "";
+    cmdGhost.textContent = lead === ":" ? "try  w · new · link · savefile · export · import · theme · help" : "type to search · Enter to jump";
+    cmdline.classList.add("show");
+    setModeColor();
+    modeBlock.textContent = "COMMAND";
+    cmdInput.focus();
+    cmdInput.dataset.lead = lead;
+  }
+  function closeCmd() {
+    cmdline.classList.remove("show");
+    enterNormal(false);
+  }
+  cmdInput.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") { e.preventDefault(); closeCmd(); return; }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      var lead = cmdInput.dataset.lead;
+      var val = cmdInput.value.trim();
+      cmdline.classList.remove("show");
+      if (lead === "/") { mode = "normal"; doSearch(val, true); ta.focus(); }
+      else { runExCommand(val); }
+    }
+  });
+  function runExCommand(c) {
+    enterNormal(false);
+    if (!c) return;
+    if (c === "w" || c === "write") { commitSave(); }
+    else if (c === "saveas" || c === "savemd" || c === "writemd" || c === "exportmd") { saveNoteAsMd(active()); }
+    else if (c.indexOf("w ") === 0) { saveNoteAsMd(active(), c.slice(2).trim()); }
+    else if (c.indexOf("saveas ") === 0) { saveNoteAsMd(active(), c.slice(7).trim()); }
+    else if (c === "mail" || c === "email" || c === "send") { emailNote(active()); }
+    else if (c === "reply" || c === "re" || c === "r") { replyToNote(active()); }
+    else if (c === "mailsetup" || c === "emailsetup" || c === "smtp") { openSmtpSettings(); }
+    else if (c === "fetch" || c === "inbox" || c === "receive" || c === "imap") { fetchEmail(); }
+    else if (c === "open" || c === "o" || c === "e" || c === "edit" || c === "openmd") { openMarkdownFiles(); }
+    else if (c === "new" || c === "n") { newNote(); }
+    else if (c === "delete" || c === "d") { deleteActive(); }
+    else if (c === "help" || c === "h") { openSheet(); }
+    else if (c === "wrap") { toggleWrap(); }
+    else if (c === "preview" || c === "autopreview" || c === "p" || c === "md") { toggleAutoPreview(); }
+    else if (c === "theme" || c.indexOf("theme ") === 0) {
+      var nm = c.slice(5).trim().toLowerCase();
+      if (nm && THEMES[nm]) applyTheme(nm, true);
+      else toggleThemeMenu();
+    }
+    else if (c === "export" || c === "backup") { downloadExport(); }
+    else if (c === "import") { importFile(); }
+    else if (c === "savefile" || c === "autosave") { connectFile(); }
+    else if (c === "file") { toggleFileMenu(); }
+    else if (c === "dedupe" || c === "dedup" || c === "duplicates") { removeDuplicates(); }
+    else if (c === "link") { openLinkPalette({ insertAt: cur, origin: "normal" }); }
+    else if (c === "go" || c === "b" || c === "buffer" || c === "switch") { openLinkPalette({ action: "open", origin: "normal" }); }
+    else if (c === "numbers" || c === "number" || c === "nu") { toggleNumbers(); }
+    else if (c === "image" || c === "img") { pickImage(); }
+    else if (c === "table") { insertTableSkeleton(); }
+    else if (c === "cleanimages" || c === "cleanimg" || c === "gcimages") { removeUnusedImages(); }
+    else if (c === "restore") { restoreLastDeleted(); }
+    else if (c === "emptytrash" || c === "trash") { emptyTrash(); }
+    else if (c === "sort") { cycleSortBy(); }
+    else if (c === "pin") { var nt2 = active(); if (nt2) { nt2.pinned = true; scheduleSave(); renderList(); toast("Note pinned"); } }
+    else if (c === "unpin") { var nt3 = active(); if (nt3) { delete nt3.pinned; scheduleSave(); renderList(); toast("Note unpinned"); } }
+    else if (c === "focus") { toggleFocus(); }
+    else if (/^s\//.test(c)) {
+      // :s/old/new/ or :s/old/new/g
+      var parts = c.slice(2).split("/");
+      if (parts.length >= 2) {
+        var pat = parts[0], rep = parts[1], flags = parts[2] || "";
+        var global = flags.indexOf("g") !== -1;
+        var n = active(); if (!n) { toast("No active note"); return; }
+        var before = ta.value;
+        var after = global ? before.split(pat).join(rep) : before.replace(pat, rep);
+        if (after === before) { toast("Pattern not found"); return; }
+        var count = global ? (before.split(pat).length - 1) : 1;
+        pushUndo();
+        setBuffer(after, cur);
+        toast("Replaced " + count + " occurrence" + (count === 1 ? "" : "s"));
+      }
+    }
+    else if (/^\d+$/.test(c)) { gotoLine(parseInt(c, 10)); render(); }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sidebar / notes
+  // ---------------------------------------------------------------------------
+  function sortedNotes(notes) {
+    var s = notes.slice();
+    if (sortBy === "alpha") s.sort(function (a, b) { return titleOf(a).localeCompare(titleOf(b)); });
+    else if (sortBy === "created") s.sort(function (a, b) { return (a.createdAt || 0) - (b.createdAt || 0); });
+    else s.sort(function (a, b) { return b.updatedAt - a.updatedAt; });
+    // pinned notes always float to the top regardless of sort order
+    s.sort(function (a, b) { return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0); });
+    return s;
+  }
+  function togglePin() {
+    var nt = active(); if (!nt) return;
+    nt.pinned = !nt.pinned;
+    scheduleSave();
+    renderList();
+    toast(nt.pinned ? "Note pinned" : "Note unpinned");
+  }
+  function tagsOf(note) {
+    var tags = [];
+    var re = /(?:^|[\s,])#([a-zA-Z][a-zA-Z0-9_-]*)/g;
+    var m;
+    while ((m = re.exec(note.body || "")) !== null) tags.push(m[1].toLowerCase());
+    return tags;
+  }
+  function allTags() {
+    var seen = {}, out = [];
+    state.notes.filter(function (n) { return !n.deleted; }).forEach(function (n) {
+      tagsOf(n).forEach(function (t) { if (!seen[t]) { seen[t] = true; out.push(t); } });
+    });
+    return out.sort();
+  }
+  function renderTagBar() {
+    var bar = document.getElementById("tagBar");
+    if (!bar) return;
+    var tags = allTags();
+    bar.innerHTML = "";
+    tags.forEach(function (t) {
+      var chip = document.createElement("span");
+      chip.className = "tag-chip" + (activeTag === t ? " active" : "");
+      chip.textContent = "#" + t;
+      chip.addEventListener("click", function () {
+        activeTag = (activeTag === t) ? null : t;
+        renderTagBar();
+        renderList();
+      });
+      bar.appendChild(chip);
+    });
+  }
+  function cycleSortBy() {
+    sortBy = sortBy === "modified" ? "alpha" : sortBy === "alpha" ? "created" : "modified";
+    state.sortBy = sortBy;
+    scheduleSave();
+    updateSortLabel();
+    renderList();
+    ta.focus();
+  }
+  function updateSortLabel() {
+    var lbl = document.getElementById("sortLbl");
+    if (lbl) lbl.textContent = sortBy === "alpha" ? "A–Z" : sortBy === "created" ? "oldest first" : "recent first";
+  }
+  function sectionCollapsed(label) {
+    return !!(state.collapsed && state.collapsed[label]);
+  }
+  function toggleSection(label) {
+    if (!state.collapsed) state.collapsed = {};
+    state.collapsed[label] = !state.collapsed[label];
+    scheduleSave();
+    renderList();
+  }
+  function sectionHeadEl(label, count, opts) {
+    opts = opts || {};
+    var collapsed = sectionCollapsed(label);
+    var h = document.createElement("div");
+    h.className = "section-head" + (collapsed ? " collapsed" : "");
+    var caret = document.createElement("span"); caret.className = "caret"; caret.textContent = "▾";
+    var l = document.createElement("span"); l.className = "label"; l.textContent = label;
+    var c = document.createElement("span"); c.className = "count" + (opts.highlight ? " hot" : ""); c.textContent = String(count);
+    h.appendChild(caret); h.appendChild(l);
+    if (opts.action) {
+      var b = document.createElement("span");
+      b.className = "sh-btn"; b.title = opts.action.title; b.textContent = opts.action.icon;
+      b.addEventListener("click", function (e) { e.stopPropagation(); opts.action.fn(); });
+      h.appendChild(b);
+    }
+    h.appendChild(c);
+    h.addEventListener("click", function () { toggleSection(label); });
+    return h;
+  }
+  function noteItemEl(nt, kind) {
+    var el = document.createElement("div");
+    el.className = "note-item" + (nt.id === state.activeId ? " active" : "") + (kind === "trash" ? " trash-item" : "");
+    el.dataset.id = nt.id;
+    el.innerHTML = '<div class="ni-title"></div><div class="ni-meta"></div>';
+    var titleEl = el.querySelector(".ni-title");
+    if (kind === "mail") {
+      if (nt.unread) {
+        var dot = document.createElement("span");
+        dot.className = "ni-unread"; dot.textContent = "●";
+        titleEl.appendChild(dot);
+      }
+      var mic = document.createElement("span");
+      mic.className = "ni-mail-ic"; mic.textContent = "✉";
+      titleEl.appendChild(mic);
+    }
+    titleEl.appendChild(document.createTextNode(titleOf(nt)));
+    if (nt.pinned) {
+      var pin = document.createElement("span");
+      pin.className = "ni-pin"; pin.textContent = "⚑";
+      titleEl.appendChild(pin);
+    }
+    var meta;
+    if (kind === "trash") {
+      var daysLeft = Math.max(0, Math.ceil(((nt.deletedAt || Date.now()) + TRASH_TTL_MS - Date.now()) / 864e5));
+      meta = "Deleted " + relTime(nt.deletedAt || nt.updatedAt)
+        + "  ·  " + (daysLeft > 0 ? "clears in " + daysLeft + "d" : "clears today");
+    } else {
+      meta = relTime(nt.updatedAt) + (snippetOf(nt) ? "  ·  " + snippetOf(nt) : "");
+    }
+    el.querySelector(".ni-meta").textContent = meta;
+    if (kind === "trash") {
+      var actions = document.createElement("div");
+      actions.className = "ni-actions";
+      var restoreBtn = document.createElement("span");
+      restoreBtn.className = "ni-action-btn"; restoreBtn.title = "Restore"; restoreBtn.textContent = "↺";
+      restoreBtn.addEventListener("click", function (e) { e.stopPropagation(); restoreNote(nt.id); });
+      var purgeBtn = document.createElement("span");
+      purgeBtn.className = "ni-action-btn"; purgeBtn.title = "Delete forever"; purgeBtn.textContent = "✕";
+      purgeBtn.addEventListener("click", function (e) { e.stopPropagation(); purgeNote(nt.id); });
+      actions.appendChild(restoreBtn); actions.appendChild(purgeBtn);
+      el.appendChild(actions);
+    } else if (kind === "mail") {
+      var mailActions = document.createElement("div");
+      mailActions.className = "ni-actions";
+      var replyBtn = document.createElement("span");
+      replyBtn.className = "ni-action-btn"; replyBtn.title = "Reply"; replyBtn.textContent = "↩";
+      replyBtn.addEventListener("click", function (e) { e.stopPropagation(); replyToNote(nt); });
+      mailActions.appendChild(replyBtn);
+      el.appendChild(mailActions);
+    }
+    el.addEventListener("click", function () { openNote(nt.id); });
+    return el;
+  }
+  function renderList() {
+    var q = filterInput.value.trim().toLowerCase();
+    function matches(nt) {
+      return (!q || (nt.body || "").toLowerCase().indexOf(q) !== -1)
+        && (!activeTag || tagsOf(nt).indexOf(activeTag) !== -1);
+    }
+    var sorted  = sortedNotes(state.notes).filter(matches);
+    var regular = sorted.filter(function (nt) { return !nt.deleted && !nt.mailId; });
+    var mail    = sorted.filter(function (nt) { return !nt.deleted && nt.mailId; });
+    var trash   = state.notes.filter(function (nt) { return nt.deleted; }).filter(matches)
+      .sort(function (a, b) { return (b.deletedAt || 0) - (a.deletedAt || 0); });
+
+    noteList.innerHTML = "";
+
+    if (!regular.length && !mail.length && !trash.length) {
+      var d = document.createElement("div");
+      d.className = "empty-list";
+      d.innerHTML = (q || activeTag) ? "No notes match." : "No notes yet.<br/>Create your first one below.";
+      noteList.appendChild(d);
+      return;
+    }
+
+    var sectioned = mail.length > 0 || trash.length > 0;
+    if (sectioned) {
+      noteList.appendChild(sectionHeadEl("Notes", regular.length));
+      if (!sectionCollapsed("Notes")) regular.forEach(function (nt) { noteList.appendChild(noteItemEl(nt, "note")); });
+    } else {
+      regular.forEach(function (nt) { noteList.appendChild(noteItemEl(nt, "note")); });
+    }
+
+    if (mail.length) {
+      var unread = mail.filter(function (nt) { return nt.unread; }).length;
+      noteList.appendChild(sectionHeadEl("Email", unread ? mail.length + " · " + unread + " new" : mail.length, {
+        highlight: unread > 0,
+        action: { icon: "⟳", title: "Fetch new mail", fn: fetchEmail },
+      }));
+      if (!sectionCollapsed("Email")) mail.forEach(function (nt) { noteList.appendChild(noteItemEl(nt, "mail")); });
+    }
+    if (trash.length) {
+      noteList.appendChild(sectionHeadEl("Trash", trash.length));
+      if (!sectionCollapsed("Trash")) trash.forEach(function (nt) { noteList.appendChild(noteItemEl(nt, "trash")); });
+    }
+  }
+  function renderListItem(id) {
+    var el = noteList.querySelector('.note-item[data-id="' + id + '"]');
+    var nt = state.notes.find(function (x) { return x.id === id; });
+    if (el && nt) {
+      var titleEl = el.querySelector(".ni-title");
+      titleEl.innerHTML = "";
+      if (nt.mailId) {
+        if (nt.unread) {
+          var dot = document.createElement("span");
+          dot.className = "ni-unread"; dot.textContent = "●";
+          titleEl.appendChild(dot);
+        }
+        var mic = document.createElement("span");
+        mic.className = "ni-mail-ic"; mic.textContent = "✉";
+        titleEl.appendChild(mic);
+      }
+      titleEl.appendChild(document.createTextNode(titleOf(nt)));
+      if (nt.pinned) {
+        var pin = document.createElement("span");
+        pin.className = "ni-pin"; pin.textContent = "⚑";
+        titleEl.appendChild(pin);
+      }
+      el.querySelector(".ni-meta").textContent = relTime(nt.updatedAt) + (snippetOf(nt) ? "  ·  " + snippetOf(nt) : "");
+    } else {
+      renderList();
+    }
+  }
+
+  // Jumplist — Ctrl-o / Ctrl-i walk back / forward through visited notes.
+  var jumpBack = [], jumpFwd = [];
+  function jumpNote(dir) {
+    var from = dir < 0 ? jumpBack : jumpFwd, to = dir < 0 ? jumpFwd : jumpBack;
+    var id = null;
+    while (from.length) {                 // skip ids that were purged or trashed since
+      var cand = from.pop();
+      if (state.notes.some(function (x) { return x.id === cand && !x.deleted; })) { id = cand; break; }
+    }
+    if (!id) { toast(dir < 0 ? "Already at the oldest note" : "Already at the newest note"); return; }
+    if (state.activeId) to.push(state.activeId);
+    openNote(id, true);
+    ta.focus();
+  }
+
+  function openNote(id, fromJump) {
+    if (!fromJump && state.activeId && state.activeId !== id) {
+      jumpBack.push(state.activeId);
+      if (jumpBack.length > 100) jumpBack.shift();
+      jumpFwd.length = 0;
+    }
+    state.activeId = id;
+    var nt = active();
+    if (nt && nt.unread) delete nt.unread;   // opening a fetched email marks it read
+    ta.value = nt ? nt.body : "";
+    cur = 0;
+    undoStack.length = 0; redoStack.length = 0;
+    enterNormal(false);
+    renderList();
+    if (previewing) renderPreview();
+    scheduleSave();
+  }
+  function newNote() {
+    var now = Date.now();
+    var nt = { id: uid(), body: "", updatedAt: now, createdAt: now };
+    state.notes.push(nt);
+    openNote(nt.id);
+    enterInsert(0);
+    if (window.innerWidth <= 720) $("side").classList.remove("open");
+  }
+  // The note ids in the sidebar's current (sorted + filtered) order.
+  function visibleNoteIds() {
+    var q = filterInput.value.trim().toLowerCase();
+    return sortedNotes(state.notes)
+      .filter(function (nt) { return !nt.deleted; })
+      .filter(function (nt) { return !q || (nt.body || "").toLowerCase().indexOf(q) !== -1; })
+      .filter(function (nt) { return !activeTag || tagsOf(nt).indexOf(activeTag) !== -1; })
+      .map(function (nt) { return nt.id; });
+  }
+  // Move to the next (dir=1) or previous (dir=-1) note, wrapping around.
+  function stepNote(dir) {
+    var ids = visibleNoteIds();
+    if (ids.length < 2) return;
+    var idx = ids.indexOf(state.activeId);
+    var next = idx === -1 ? 0 : (idx + dir + ids.length) % ids.length;
+    if (ids[next] === state.activeId) return;
+    openNote(ids[next]);
+    var el = noteList.querySelector(".note-item.active");
+    if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
+    ta.focus();
+  }
+  function deleteActive() {
+    var nt = active(); if (!nt) return;
+    nt.deleted = true; nt.deletedAt = Date.now();
+    var next = state.notes.filter(function (x) { return !x.deleted; })
+      .sort(function (a, b) { return b.updatedAt - a.updatedAt; })[0];
+    if (next) openNote(next.id);
+    else { state.activeId = null; ta.value = ""; renderList(); enterNormal(false); }
+    renderTagBar();
+    scheduleSave();
+    renderFileMenu();
+    toast("Note moved to trash · :restore to undo");
+  }
+  function trashedNotes() { return state.notes.filter(function (n) { return n.deleted; }); }
+  // Trash is a waiting room, not a graveyard — anything older than 30 days is
+  // dropped on startup so the store doesn't grow forever.
+  var TRASH_TTL_MS = 30 * 864e5;
+  function purgeExpiredTrash() {
+    var now = Date.now(), removed = 0;
+    state.notes = state.notes.filter(function (n) {
+      if (!n.deleted) return true;
+      if (!n.deletedAt) { n.deletedAt = now; return true; }   // legacy: start the clock now
+      if (now - n.deletedAt > TRASH_TTL_MS) { removed++; return false; }
+      return true;
+    });
+    return removed;
+  }
+  function restoreLastDeleted() {
+    var trashed = trashedNotes().sort(function (a, b) { return (b.deletedAt || 0) - (a.deletedAt || 0); });
+    if (!trashed.length) { toast("Nothing in trash"); return; }
+    var nt = trashed[0];
+    delete nt.deleted; delete nt.deletedAt;
+    openNote(nt.id);
+    renderTagBar();
+    scheduleSave();
+    renderFileMenu();
+    toast("Restored: " + titleOf(nt));
+  }
+  function emptyTrash() {
+    var n = trashedNotes().length;
+    if (!n) { toast("Trash is already empty"); return; }
+    state.notes = state.notes.filter(function (x) { return !x.deleted; });
+    scheduleSave();
+    renderFileMenu();
+    renderList();
+    toast("Emptied trash (" + n + " note" + (n === 1 ? "" : "s") + " deleted permanently)");
+  }
+  function restoreNote(id) {
+    var nt = state.notes.find(function (n) { return n.id === id; });
+    if (!nt || !nt.deleted) return;
+    delete nt.deleted; delete nt.deletedAt;
+    renderTagBar();
+    scheduleSave();
+    renderFileMenu();
+    renderList();
+    toast("Restored: " + titleOf(nt));
+  }
+  function purgeNote(id) {
+    var idx = state.notes.findIndex(function (n) { return n.id === id; });
+    if (idx === -1) return;
+    var wasActive = state.notes[idx].id === state.activeId;
+    state.notes.splice(idx, 1);
+    if (wasActive) {
+      state.activeId = null;
+      ta.value = "";
+      enterNormal(false);
+    }
+    scheduleSave();
+    renderFileMenu();
+    renderList();
+    toast("Deleted permanently");
+  }
+
+  // ---------------------------------------------------------------------------
+  // Internal links — [[Note title]] connections between notes
+  // ---------------------------------------------------------------------------
+  function findByTitle(t) {
+    var key = (t || "").trim().toLowerCase();
+    return state.notes.find(function (n) { return titleOf(n).trim().toLowerCase() === key; });
+  }
+  function openOrCreate(title) {
+    var n = findByTitle(title);
+    if (n) { openNote(n.id); return; }
+    var note = { id: uid(), body: "# " + (title || "").trim() + "\n\n", updatedAt: Date.now() };
+    state.notes.push(note);
+    openNote(note.id);
+    enterInsert(ta.value.length);
+    scheduleSave();
+  }
+  function linkAt(pos) {
+    var v = ta.value;
+    var open = v.lastIndexOf("[[", pos);
+    if (open === -1) return null;
+    var close = v.indexOf("]]", open + 2);
+    if (close === -1 || pos > close + 1) return null;
+    var title = v.slice(open + 2, close).trim();
+    if (!title) return null;
+    return { title: title, start: open, end: close + 2 };
+  }
+  function followLinkUnderCursor() {
+    var l = linkAt(cur);
+    if (l) openOrCreate(l.title);
+    else toast("No [[link]] under the cursor");
+  }
+
+  var linkReplaceFrom = null, linkInsertAt = null, linkOriginMode = "insert", linkSel = 0, linkItems = [];
+  var paletteAction = "link";   // "link" inserts [[title]] · "open" jumps to the note
+  function openLinkPalette(opts) {
+    opts = opts || {};
+    paletteAction = opts.action || "link";
+    linkReplaceFrom = (opts.replaceFrom != null) ? opts.replaceFrom : null;
+    linkInsertAt = (opts.insertAt != null) ? opts.insertAt : null;
+    linkOriginMode = opts.origin || "insert";
+    $("paletteCatch").classList.add("show");
+    $("linkPalette").classList.add("show");
+    var s = $("linkSearch"); s.value = "";
+    s.placeholder = paletteAction === "open" ? "Jump to a note, or type a new title…" : "Search notes, or type a new title…";
+    $("paletteHead").textContent = paletteAction === "open" ? "Go to note" : "Link to a note";
+    renderLinkList("");
+    setTimeout(function () { s.focus(); }, 0);
+  }
+  function renderLinkList(query) {
+    var q = (query || "").trim().toLowerCase();
+    var cur0 = active();
+    var items = state.notes
+      .filter(function (n) { return !n.deleted && (!cur0 || n.id !== cur0.id); })
+      .map(function (n) { return { type: "note", note: n, title: titleOf(n) }; })
+      .filter(function (it) { return !q || it.title.toLowerCase().indexOf(q) !== -1 || (it.note.body || "").toLowerCase().indexOf(q) !== -1; })
+      .sort(function (a, b) { return b.note.updatedAt - a.note.updatedAt; })
+      .slice(0, 50);
+    if (q && !state.notes.some(function (n) { return !n.deleted && titleOf(n).trim().toLowerCase() === q; })) {
+      items.push({ type: "create", title: (query || "").trim() });
+    }
+    linkItems = items; linkSel = 0; paintLinkList();
+  }
+  function paintLinkList() {
+    var list = $("linkList"); list.innerHTML = "";
+    if (!linkItems.length) {
+      var e = document.createElement("div"); e.className = "palette-empty";
+      e.textContent = "Type a title to create and link a new note.";
+      list.appendChild(e); return;
+    }
+    linkItems.forEach(function (it, i) {
+      var el = document.createElement("div");
+      el.className = "palette-item" + (it.type === "create" ? " create" : "") + (i === linkSel ? " sel" : "");
+      var t = document.createElement("span"); t.className = "pi-title";
+      t.textContent = it.type === "create" ? ("Create \u201C" + it.title + "\u201D") : it.title;
+      var tag = document.createElement("span"); tag.className = "pi-tag";
+      tag.textContent = it.type === "create" ? "new" : (it.note && it.note.mailId ? "\u2709 mail" : "note");
+      el.appendChild(t); el.appendChild(tag);
+      el.addEventListener("mousedown", function (ev) { ev.preventDefault(); chooseLink(i); });
+      list.appendChild(el);
+    });
+  }
+  function chooseLink(i) {
+    var it = linkItems[i]; if (!it) return;
+    var title = it.title;
+    if (paletteAction === "open") {
+      // Quick-open: jump to (or create) the note instead of inserting a link.
+      finishPalette();
+      mode = "normal";
+      if (it.type === "create") { openOrCreate(title); }
+      else { openNote(it.note.id); render(); ta.focus(); }
+      return;
+    }
+    if (it.type === "create") {
+      var note = { id: uid(), body: "# " + title + "\n\n", updatedAt: Date.now() };
+      state.notes.push(note); renderList(); scheduleSave();
+    }
+    insertLink(title);
+  }
+  function insertLink(title) {
+    var text = "[[" + title + "]]";
+    var from, to;
+    if (linkReplaceFrom != null) { from = linkReplaceFrom; to = linkReplaceFrom + 2; }
+    else { from = to = (linkInsertAt != null ? linkInsertAt : ta.selectionStart); }
+    var origin = linkOriginMode;
+    finishPalette();
+    pushUndo();
+    var v = ta.value;
+    var nv = v.slice(0, from) + text + v.slice(to);
+    ta.value = nv;
+    syncNote();
+    if (origin === "insert") {
+      mode = "insert";
+      var caret = from + text.length;
+      cur = clamp(caret, 0, nv.length);
+      ta.setSelectionRange(caret, caret);
+      render(); ta.focus();
+    } else {
+      mode = "normal";
+      cur = clamp(from, 0, nv.length);
+      render(); ta.focus();
+    }
+  }
+  function cancelLink() {
+    var origin = linkOriginMode, from = linkReplaceFrom, at = linkInsertAt;
+    finishPalette();
+    if (origin === "insert") {
+      mode = "insert";
+      var c = (from != null ? from + 2 : ta.selectionStart);
+      cur = clamp(c, 0, ta.value.length);
+      ta.setSelectionRange(cur, cur); render(); ta.focus();
+    } else {
+      mode = "normal";
+      cur = clamp(at != null ? at : cur, 0, ta.value.length);
+      render(); ta.focus();
+    }
+  }
+  function finishPalette() {
+    $("linkPalette").classList.remove("show");
+    $("paletteCatch").classList.remove("show");
+    linkReplaceFrom = null; linkInsertAt = null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Inserting content (images, tables, pasted text)
+  // ---------------------------------------------------------------------------
+  function insertAtCursor(text) {
+    var at = (mode === "insert") ? ta.selectionStart : cur;
+    pushUndo();
+    var v = ta.value;
+    ta.value = v.slice(0, at) + text + v.slice(at);
+    var caret = at + text.length;
+    cur = clamp(caret, 0, ta.value.length);
+    syncNote();
+    if (mode === "insert") ta.setSelectionRange(caret, caret);
+    render(); ta.focus();
+  }
+  function insertBlock(text) {
+    var at = (mode === "insert") ? ta.selectionStart : cur;
+    var v = ta.value, before = v.slice(0, at), after = v.slice(at);
+    var pre = (before === "" || before.slice(-1) === "\n") ? "" : "\n";
+    var post = (after === "" || after.charAt(0) === "\n") ? "" : "\n";
+    insertAtCursor(pre + text + post);
+  }
+  // When building an email body, emailCidCollect is a Set; in that mode image
+  // refs become cid: URLs (and the id is recorded) so they ride along as inline
+  // attachments instead of bloating the HTML with base64 data URIs.
+  var emailCidCollect = null;
+  function resolveImg(url) {
+    if (/^img:/.test(url)) {
+      var id = url.slice(4);
+      if (emailCidCollect) {
+        if (state.images[id]) { emailCidCollect.add(id); return "cid:" + id; }
+        return "";
+      }
+      var im = state.images[id]; return im ? im.data : "";
+    }
+    return url;
+  }
+  // Read an image blob to a data URL, downscaling/compressing if it's large.
+  function processImage(blob) {
+    return new Promise(function (resolve) {
+      var MAX = 1600, KEEP = 700 * 1024;
+      if (blob.size <= KEEP) {
+        var r = new FileReader();
+        r.onload = function () { resolve({ data: r.result, type: blob.type || "image/png" }); };
+        r.onerror = function () { resolve(null); };
+        r.readAsDataURL(blob);
+        return;
+      }
+      var url = URL.createObjectURL(blob), img = new Image();
+      img.onload = function () {
+        var w = img.naturalWidth, h = img.naturalHeight, s = Math.min(1, MAX / Math.max(w, h));
+        var cw = Math.max(1, Math.round(w * s)), ch = Math.max(1, Math.round(h * s));
+        var c = document.createElement("canvas"); c.width = cw; c.height = ch;
+        c.getContext("2d").drawImage(img, 0, 0, cw, ch);
+        URL.revokeObjectURL(url);
+        try { resolve({ data: c.toDataURL("image/jpeg", 0.85), type: "image/jpeg" }); }
+        catch (e) { resolve(null); }
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); resolve(null); };
+      img.src = url;
+    });
+  }
+  async function addImageBlob(blob, name) {
+    var res = await processImage(blob);
+    if (!res || !res.data) { toast("Couldn't read that image"); return; }
+    var id = "im" + uid();
+    state.images[id] = { data: res.data, type: res.type };
+    insertBlock("![" + (name || "image") + "](img:" + id + ")");
+    scheduleSave();
+    toast("Image added");
+  }
+  function pickImage() {
+    var input = document.getElementById("imageInput");
+    input.value = "";
+    input.onchange = function () {
+      var files = input.files ? Array.prototype.slice.call(input.files) : [];
+      files.forEach(function (f) { if (f.type.indexOf("image/") === 0) addImageBlob(f, f.name); });
+    };
+    input.click();
+  }
+  // Tab-separated text (e.g. copied from Excel/Sheets) -> a markdown table.
+  function looksLikeTSV(text) {
+    if (!text || text.indexOf("\t") === -1) return false;
+    var rows = text.replace(/\r/g, "").split("\n").filter(function (l) { return l.length; });
+    return rows.length >= 1 && rows[0].split("\t").length >= 2;
+  }
+  function tsvToMarkdown(text) {
+    var rows = text.replace(/\r/g, "").split("\n").filter(function (l) { return l.length; });
+    var cells = rows.map(function (r) { return r.split("\t"); });
+    var cols = cells.reduce(function (m, c) { return Math.max(m, c.length); }, 0);
+    if (cols < 2) return null;
+    function fmt(c) {
+      var a = c.slice(); while (a.length < cols) a.push("");
+      return "| " + a.map(function (x) { return String(x).replace(/\|/g, "\\|").trim(); }).join(" | ") + " |";
+    }
+    var out = [fmt(cells[0]), "| " + Array.apply(null, Array(cols)).map(function () { return "---"; }).join(" | ") + " |"];
+    for (var i = 1; i < cells.length; i++) out.push(fmt(cells[i]));
+    return out.join("\n");
+  }
+  function insertTableSkeleton() {
+    insertBlock("| Column A | Column B | Column C |\n| --- | --- | --- |\n| | | |\n| | | |");
+  }
+  // Find image ids referenced by any note, plus the current undo/redo history,
+  // so cleanup never breaks an undo.
+  function referencedImageIds() {
+    var ids = {};
+    function scan(text) { if (!text) return; var m, re = /img:([A-Za-z0-9_-]+)/g; while ((m = re.exec(text))) ids[m[1]] = true; }
+    state.notes.forEach(function (n) { scan(n.body); });
+    scan(ta.value);
+    undoStack.forEach(function (s) { scan(s.v); });
+    redoStack.forEach(function (s) { scan(s.v); });
+    return ids;
+  }
+  function unusedImageIds() {
+    if (!state.images) return [];
+    var ref = referencedImageIds();
+    return Object.keys(state.images).filter(function (k) { return !ref[k]; });
+  }
+  function fmtBytes(b) { return b >= 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1024)) + " KB"; }
+  function removeUnusedImages() {
+    var unused = unusedImageIds();
+    if (!unused.length) { toast("No unused images"); return; }
+    var bytes = 0;
+    unused.forEach(function (k) {
+      var d = state.images[k] && state.images[k].data;
+      if (d) bytes += Math.floor(d.length * 0.75);
+      delete state.images[k];
+    });
+    scheduleSave();
+    renderFileMenu();
+    toast("Removed " + unused.length + " unused image" + (unused.length === 1 ? "" : "s") + (bytes ? " · freed ~" + fmtBytes(bytes) : ""));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Preview (tiny markdown renderer)
+  // ---------------------------------------------------------------------------
+  function esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  function attrEsc(s) { return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  function inlineMd(s) {
+    return esc(s)
+      .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function (_, alt, url) {
+        var src = resolveImg(url.trim());
+        if (!src) return "";
+        return '<img class="md-img" alt="' + attrEsc(alt) + '" src="' + attrEsc(src) + '" />';
+      })
+      .replace(/\[\[([^\]]+)\]\]/g, function (_, t) {
+        var raw = t.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
+        var cls = findByTitle(raw) ? "ilink" : "ilink-new";
+        return '<a class="' + cls + '" data-title="' + attrEsc(raw) + '">' + t.trim() + "</a>";
+      })
+      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>")
+      .replace(/~~([^~]+)~~/g, "<del>$1</del>")
+      .replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  }
+  function splitRow(line) {
+    var s = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+    return s.split(/(?<!\\)\|/).map(function (c) { return c.replace(/\\\|/g, "|").trim(); });
+  }
+  function parseAlign(cell) {
+    var c = cell.trim(), l = c.charAt(0) === ":", r = c.charAt(c.length - 1) === ":";
+    return (l && r) ? "center" : r ? "right" : l ? "left" : "";
+  }
+  function renderTable(header, aligns, rows) {
+    function cell(tag, text, align) {
+      return "<" + tag + (align ? ' style="text-align:' + align + '"' : "") + ">" + inlineMd(text || "") + "</" + tag + ">";
+    }
+    var thead = "<tr>" + header.map(function (h, j) { return cell("th", h, aligns[j]); }).join("") + "</tr>";
+    var tbody = rows.map(function (r) {
+      var cells = "";
+      for (var j = 0; j < header.length; j++) cells += cell("td", r[j] !== undefined ? r[j] : "", aligns[j]);
+      return "<tr>" + cells + "</tr>";
+    }).join("");
+    return '<div class="md-table-wrap"><table class="md-table"><thead>' + thead + "</thead><tbody>" + tbody + "</tbody></table></div>";
+  }
+  var SH_LANGS = {
+    js: { kw: /\b(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|new|this|typeof|instanceof|import|export|default|class|extends|async|await|try|catch|finally|throw|of|in|null|undefined|true|false)\b/g },
+    ts: { kw: /\b(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|new|this|typeof|instanceof|import|export|default|class|extends|async|await|try|catch|finally|throw|of|in|null|undefined|true|false|type|interface|enum|namespace|readonly|as|from|declare)\b/g },
+    py: { kw: /\b(def|return|if|elif|else|for|while|in|not|and|or|import|from|as|class|pass|break|continue|raise|try|except|finally|with|lambda|yield|None|True|False|self|is)\b/g },
+    bash: { kw: /\b(if|then|else|elif|fi|for|while|do|done|case|esac|function|return|export|local|echo|cd|ls|rm|cp|mv|mkdir|grep|sed|awk|cat|source|set|unset|shift)\b/g },
+    sh: { kw: /\b(if|then|else|elif|fi|for|while|do|done|case|esac|function|return|export|local|echo|cd|ls|rm|cp|mv|mkdir|grep|sed|awk|cat|source|set|unset|shift)\b/g },
+    go: { kw: /\b(func|return|if|else|for|range|switch|case|break|continue|var|const|type|struct|interface|import|package|defer|go|chan|select|map|make|new|nil|true|false|error)\b/g },
+    rust: { kw: /\b(fn|return|if|else|for|while|loop|match|let|mut|const|type|struct|enum|impl|trait|use|mod|pub|self|Self|super|where|as|in|ref|true|false|None|Some|Ok|Err)\b/g },
+    css: { kw: /\b(important|inherit|initial|unset|auto|none|flex|grid|block|inline|absolute|relative|fixed|sticky)\b/g },
+    html: { kw: /(&lt;\/?)([\w-]+)/g },
+    json: { kw: /\b(true|false|null)\b/g }
+  };
+  function highlight(code, lang) {
+    var L = lang && (SH_LANGS[lang] || SH_LANGS[lang.replace(/^(javascript|typescript)$/, function(m){ return m[0]==="j"?"js":"ts"; })]);
+    if (!L) return code;
+    // strings
+    code = code.replace(/(&#34;[^&#]*?&#34;|&#39;[^&#]*?&#39;|"[^"\\]*(?:\\.[^"\\]*)*"|'[^'\\]*(?:\\.[^'\\]*)*'|`[^`]*`)/g, '<span class="sh-str">$1</span>');
+    // comments
+    code = code.replace(/(\/\/.*$|#.*$|\/\*[\s\S]*?\*\/)/gm, '<span class="sh-cmt">$1</span>');
+    // numbers
+    code = code.replace(/\b(\d+\.?\d*)\b/g, '<span class="sh-num">$1</span>');
+    // keywords (only outside existing spans)
+    if (L.kw) {
+      code = code.replace(L.kw, function(m) {
+        return m.indexOf('<') === -1 ? '<span class="sh-kw">' + m + '</span>' : m;
+      });
+    }
+    return code;
+  }
+  function renderMarkdown(src) {
+    var out = [], i = 0, lines = src.split("\n");
+    while (i < lines.length) {
+      var ln = lines[i];
+      if (/^```/.test(ln)) {
+        var lang = ln.slice(3).trim().toLowerCase();
+        var buf = []; i++;
+        while (i < lines.length && !/^```/.test(lines[i])) { buf.push(esc(lines[i])); i++; }
+        i++;
+        var codeHtml = lang ? highlight(buf.join("\n"), lang) : buf.join("\n");
+        out.push('<div class="md-code"><button class="code-copy" type="button" aria-label="Copy code"><span class="cc-ic">⧉</span><span class="cc-tx">Copy</span></button><pre><code>' + codeHtml + "</code></pre></div>"); continue;
+      }
+      if (/\|/.test(ln) && i + 1 < lines.length && /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)+\|?\s*$/.test(lines[i + 1])) {
+        var header = splitRow(ln);
+        var aligns = splitRow(lines[i + 1]).map(parseAlign);
+        i += 2;
+        var trows = [];
+        while (i < lines.length && lines[i].trim() !== "" && lines[i].indexOf("|") !== -1) { trows.push(splitRow(lines[i])); i++; }
+        out.push(renderTable(header, aligns, trows));
+        continue;
+      }
+      var h = ln.match(/^(#{1,3})\s+(.*)$/);
+      if (h) { out.push("<h" + h[1].length + ">" + inlineMd(h[2]) + "</h" + h[1].length + ">"); i++; continue; }
+      if (/^>\s?/.test(ln)) {
+        var q = []; while (i < lines.length && /^>\s?/.test(lines[i])) { q.push(inlineMd(lines[i].replace(/^>\s?/, ""))); i++; }
+        out.push("<blockquote>" + q.join("<br/>") + "</blockquote>"); continue;
+      }
+      if (/^\s*[-*+]\s+\[[ xX]\]/.test(ln)) {
+        var tl = [];
+        while (i < lines.length && /^\s*[-*+]\s+\[[ xX]\]/.test(lines[i])) {
+          var checked = /^\s*[-*+]\s+\[[xX]\]/.test(lines[i]);
+          var text = lines[i].replace(/^\s*[-*+]\s+\[[ xX]\]\s?/, "");
+          var lineIdx = i;
+          tl.push('<li class="task-item' + (checked ? " done" : "") + '" data-line="' + lineIdx + '">' +
+            '<input type="checkbox"' + (checked ? " checked" : "") + ' data-line="' + lineIdx + '" />' +
+            '<span>' + inlineMd(text) + '</span></li>');
+          i++;
+        }
+        out.push("<ul>" + tl.join("") + "</ul>"); continue;
+      }
+      if (/^\s*[-*+]\s+/.test(ln)) {
+        var ul = []; while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i])) { ul.push("<li>" + inlineMd(lines[i].replace(/^\s*[-*+]\s+/, "")) + "</li>"); i++; }
+        out.push("<ul>" + ul.join("") + "</ul>"); continue;
+      }
+      if (/^\s*\d+\.\s+/.test(ln)) {
+        var ol = []; while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) { ol.push("<li>" + inlineMd(lines[i].replace(/^\s*\d+\.\s+/, "")) + "</li>"); i++; }
+        out.push("<ol>" + ol.join("") + "</ol>"); continue;
+      }
+      if (/^\s*([-*_])\1{2,}\s*$/.test(ln)) { out.push("<hr/>"); i++; continue; }
+      if (ln.trim() === "") { i++; continue; }
+      var para = [ln]; i++;
+      while (i < lines.length && lines[i].trim() !== "" && !/^(#{1,3}\s|>|\s*[-*+]\s|\s*\d+\.\s|```)/.test(lines[i])) { para.push(lines[i]); i++; }
+      out.push("<p>" + para.map(inlineMd).join("<br/>") + "</p>");
+    }
+    return out.join("\n");
+  }
+  function backlinksFor(note) {
+    if (!note) return [];
+    var title = titleOf(note).trim().toLowerCase();
+    return state.notes.filter(function (n) {
+      if (n.id === note.id || n.deleted) return false;
+      var re = /\[\[([^\]]+)\]\]/g, m;
+      while ((m = re.exec(n.body || "")) !== null) {
+        if (m[1].trim().toLowerCase() === title) return true;
+      }
+      return false;
+    });
+  }
+  // ---------------------------------------------------------------------------
+  // Folding
+  // ---------------------------------------------------------------------------
+  function getFolds(noteId) {
+    if (!foldState[noteId]) foldState[noteId] = new Set();
+    return foldState[noteId];
+  }
+
+  function applyFolds(noteId) {
+    var folds = getFolds(noteId);
+    // Collect all headings in order (before any DOM mutation).
+    var allKids = Array.from(preview.children);
+    var sections = [];
+    allKids.forEach(function (el, idx) {
+      if (/^H[1-3]$/.test(el.tagName)) sections.push({ el: el, level: parseInt(el.tagName[1], 10), sIdx: sections.length });
+    });
+    if (!sections.length) return;
+
+    // Process in reverse so inner headings are wrapped before outer ones.
+    sections.slice().reverse().forEach(function (sec) {
+      var hd = sec.el, level = sec.level, sIdx = sec.sIdx;
+      var isFolded = folds.has(sIdx);
+
+      // Re-read children each iteration since previous iterations mutated the DOM.
+      var kids = Array.from(preview.children);
+      var hdPos = kids.indexOf(hd);
+      var body = [];
+      for (var p = hdPos + 1; p < kids.length; p++) {
+        var sib = kids[p];
+        if (/^H[1-3]$/.test(sib.tagName) && parseInt(sib.tagName[1], 10) <= level) break;
+        body.push(sib);
+      }
+
+      // Add fold indicator and stub even if body is empty (for consistency).
+      hd.classList.add("fold-hd");
+      hd.classList.toggle("folded", isFolded);
+
+      if (!body.length) return;
+
+      // Stub line shown when section is collapsed.
+      var stub = document.createElement("div");
+      stub.className = "fold-stub" + (isFolded ? " show" : "");
+      stub.textContent = body.length + " line" + (body.length === 1 ? "" : "s") + " hidden";
+
+      // Wrap body nodes.
+      var wrap = document.createElement("div");
+      wrap.className = "fold-body" + (isFolded ? " collapsed" : "");
+
+      hd.parentNode.insertBefore(wrap, hd.nextSibling);
+      hd.parentNode.insertBefore(stub, wrap);
+      body.forEach(function (b) { wrap.appendChild(b); });
+
+      function toggle() {
+        var nowFolded = folds.has(sIdx);
+        if (nowFolded) { folds.delete(sIdx); } else { folds.add(sIdx); }
+        hd.classList.toggle("folded", !nowFolded);
+        wrap.classList.toggle("collapsed", !nowFolded);
+        stub.classList.toggle("show", !nowFolded);
+        // Update stub count (body may have changed since last render).
+        if (!nowFolded) stub.textContent = wrap.children.length + " item" + (wrap.children.length === 1 ? "" : "s") + " hidden";
+      }
+      hd.addEventListener("click", toggle);
+      stub.addEventListener("click", toggle);
+    });
+  }
+
+  function headingIndexAtCursor() {
+    var lines = ta.value.split("\n");
+    var lineIdx = ta.value.slice(0, cur).split("\n").length - 1;
+    if (!/^#{1,3}\s/.test(lines[lineIdx])) return -1;
+    var count = 0;
+    for (var i = 0; i < lineIdx; i++) { if (/^#{1,3}\s/.test(lines[i])) count++; }
+    return count;
+  }
+
+  function toggleFoldAtCursor() {
+    var idx = headingIndexAtCursor();
+    if (idx === -1) { toast("za — cursor not on a heading"); return; }
+    var nt = active(); if (!nt) return;
+    var folds = getFolds(nt.id);
+    if (folds.has(idx)) folds.delete(idx); else folds.add(idx);
+    if (!previewing) syncView(); else renderPreview();
+  }
+
+  function foldAll() {
+    var nt = active(); if (!nt) return;
+    var lines = ta.value.split("\n");
+    var folds = getFolds(nt.id);
+    folds.clear();
+    var idx = 0;
+    lines.forEach(function (l) { if (/^#{1,3}\s/.test(l)) { folds.add(idx++); } });
+    if (!previewing) syncView(); else renderPreview();
+  }
+
+  function unfoldAll() {
+    var nt = active(); if (!nt) return;
+    getFolds(nt.id).clear();
+    if (!previewing) syncView(); else renderPreview();
+  }
+
+  function renderPreview() {
+    var nt = active();
+    if (!nt || !nt.body.trim()) {
+      preview.innerHTML = '<p class="preview-empty">Nothing here yet. Press <b>i</b> to start writing.</p>';
+      lastPreviewText = ta.value;
+      return;
+    }
+    var html = renderMarkdown(nt.body);
+    var links = backlinksFor(nt);
+    if (links.length) {
+      html += '<div class="backlinks"><div class="bl-head">← linked from</div>' +
+        links.map(function (n) {
+          return '<a class="ilink" data-title="' + attrEsc(titleOf(n)) + '">' + esc(titleOf(n)) + '</a>';
+        }).join("  ·  ") + '</div>';
+    }
+    preview.innerHTML = html;
+    lastPreviewText = ta.value;
+    applyFolds(nt.id);
+  }
+  function toggleWrap() {
+    app.classList.toggle("nowrap");
+    $("wrapBtn").classList.toggle("on", !app.classList.contains("nowrap"));
+    refreshGutterLayout();
+    ta.focus();
+  }
+  var focusMode = false;
+  function toggleFocus() {
+    focusMode = !focusMode;
+    document.body.classList.toggle("focus-mode", focusMode);
+    refreshGutterLayout();
+    ta.focus();
+    if (focusMode) toast("Focus mode · :focus or Ctrl+Shift+F to exit");
+  }
+
+  // ---------------------------------------------------------------------------
+  // Cheatsheet
+  // ---------------------------------------------------------------------------
+  var SHEET = [
+    ["Moving (Normal)", [
+      ["h j k l", "left · down · up · right"],
+      ["w / b", "next / previous word"],
+      ["e", "end of word"],
+      ["0 / $", "start / end of line"],
+      ["^", "first non-blank"],
+      ["gg / G", "top / bottom of note"],
+      ["3j  ·  5w", "repeat: prefix a number"],
+      ["Ctrl-d / Ctrl-u", "jump down / up"],
+    ]],
+    ["Reading (preview)", [
+      ["Space", "toggle reading ↔ editing"],
+      ["Tab / Shift-Tab", "next / previous note"],
+      ["j / k", "scroll line down / up"],
+      ["Ctrl-d / Ctrl-u", "scroll half a page"],
+      ["Ctrl-f / PageDown", "scroll a page down"],
+      ["Ctrl-b / PageUp", "scroll a page up"],
+      ["gg / G", "jump to top / bottom"],
+      ["i", "switch to editing"],
+    ]],
+    ["Typing (Insert)", [
+      ["i / a", "insert before / after cursor"],
+      ["I / A", "start / end of line"],
+      ["o / O", "open line below / above"],
+      ["Esc", "back to Normal mode"],
+    ]],
+    ["Editing (Normal)", [
+      ["x", "delete character"],
+      ["dd", "delete line"],
+      ["dw / d$", "delete word / to line end"],
+      ["cw / cc", "change word / line"],
+      ["D / C", "delete / change to line end"],
+      ["r", "replace one character"],
+      ["J", "join with next line"],
+      ["yy / yw", "yank (copy) line / word"],
+      ["p / P", "paste after / before"],
+      ["u  ·  Ctrl-r", "undo · redo"],
+    ]],
+    ["Selecting (Visual)", [
+      ["v", "start selecting"],
+      ["h j k l w b $", "extend the selection"],
+      ["o", "swap which end moves"],
+      ["d / x", "delete selection"],
+      ["y", "yank selection"],
+      ["c", "change selection"],
+      ["Esc", "cancel selection"],
+    ]],
+    ["Finding", [
+      ["/text", "search forward"],
+      ["n / N", "next / previous match"],
+      ["Ctrl-f", "focus sidebar search"],
+      ["Ctrl-p", "quick-open any note by name"],
+      ["Ctrl-o / Ctrl-i", "jump back / forward through visited notes"],
+    ]],
+    ["Sidebar", [
+      ["Notes", "your regular notes"],
+      ["Email", "messages imported with :fetch — ● marks unread"],
+      ["Trash", "deleted notes — auto-clears after 30 days"],
+      ["click heading", "collapse / expand a section"],
+      ["⟳ hover", "fetch new mail (Email heading)"],
+      ["↩ hover", "reply to a fetched email"],
+      ["↺ hover", "restore a trashed note"],
+      ["✕ hover", "delete a trashed note forever"],
+    ]],
+    ["Linking notes", [
+      ["[[", "pop up the note picker"],
+      ["gf", "open the link under the cursor"],
+      [":link", "insert a link to a note"],
+      ["click", "follow a link in preview"],
+    ]],
+    ["Images & tables", [
+      ["paste", "screenshot / picture → inserted"],
+      ["drop", "drag an image file in"],
+      [":image", "pick an image to insert"],
+      [":table", "insert a table"],
+      ["paste", "spreadsheet cells → table"],
+      ["⧉ copy", "hover a code block to copy it"],
+      [":cleanimages", "remove unused images"],
+    ]],
+    ["Folding (preview)", [
+      ["za", "toggle fold on heading under cursor"],
+      ["zM", "fold all headings"],
+      ["zR", "unfold all headings"],
+      ["click", "click a heading in preview to fold/unfold"],
+    ]],
+    ["Markdown extras", [
+      ["- [ ] task", "task checkbox (unchecked)"],
+      ["- [x] done", "task checkbox (checked)"],
+      ["click", "toggle a checkbox in preview"],
+      ["~~text~~", "strikethrough"],
+      ["Enter", "auto-continues lists while typing"],
+      ["[[link]]", "backlinks shown at bottom of preview"],
+      ["Ctrl-Shift-F", "toggle focus / distraction-free mode"],
+    ]],
+    ["Commands ( : )", [
+      [":w", "save now"],
+      [":saveas", "save this note as .md"],
+      [":mail", "email this note via your SMTP account"],
+      [":reply", "draft a reply to the current fetched email"],
+      [":mailsetup", "configure email (SMTP + IMAP) settings"],
+      [":fetch", "fetch inbox messages in as notes"],
+      [":open", "open .md file(s) as notes"],
+      [":new", "create a note"],
+      [":go", "quick-open a note (same as Ctrl-p)"],
+      [":delete", "move this note to trash"],
+      [":restore", "restore last deleted note"],
+      [":emptytrash", "permanently delete trashed notes"],
+      [":pin · :unpin", "pin note to top of list"],
+      [":focus", "toggle distraction-free mode"],
+      [":s/old/new/", "find & replace (once)"],
+      [":s/old/new/g", "find & replace (all)"],
+      [":sort", "cycle sort order"],
+      [":wrap", "toggle line wrap"],
+      [":numbers", "toggle line numbers"],
+      [":preview", "auto-preview when not editing"],
+      [":theme", "change color scheme"],
+      [":savefile", "autosave to a .json file"],
+      [":export", "download a .json backup"],
+      [":import", "load notes from .json"],
+      [":dedupe", "remove duplicate notes"],
+      [":42", "jump to line 42"],
+      [":help", "open this sheet"],
+    ]],
+  ];
+  function buildSheet() {
+    var grid = $("sheetGrid");
+    SHEET.forEach(function (g) {
+      var sec = document.createElement("div");
+      sec.className = "group";
+      var h = document.createElement("h3"); h.textContent = g[0]; sec.appendChild(h);
+      g[1].forEach(function (r) {
+        var row = document.createElement("div"); row.className = "row";
+        var keys = document.createElement("div"); keys.className = "keys";
+        r[0].split(" ").forEach(function (part, idx) {
+          if (part === "/" || part === "·") { keys.appendChild(document.createTextNode(" " + part + " ")); }
+          else { var kb = document.createElement("kbd"); kb.textContent = part; keys.appendChild(kb); keys.appendChild(document.createTextNode(" ")); }
+        });
+        var desc = document.createElement("div"); desc.className = "desc"; desc.textContent = r[1];
+        row.appendChild(keys); row.appendChild(desc); sec.appendChild(row);
+      });
+      grid.appendChild(sec);
+    });
+  }
+  function openSheet() { scrim.classList.add("show"); }
+  function closeSheet() { scrim.classList.remove("show"); ta.focus(); }
+
+  // ---------------------------------------------------------------------------
+  // Global keys + wiring
+  // ---------------------------------------------------------------------------
+  document.addEventListener("keydown", function (e) {
+    // Email dialogs: while open, keep their inputs working and let Esc close
+    // them — don't let editor shortcuts (?, Ctrl-F, …) fire underneath.
+    var cs = $("composeScrim"), ss = $("smtpScrim");
+    if (cs.classList.contains("show") || ss.classList.contains("show")) {
+      if (e.key === "Escape") { e.preventDefault(); if (cs.classList.contains("show")) closeCompose(); else closeSmtp(); }
+      return;
+    }
+    var tm = document.getElementById("themeMenu");
+    if (tm && tm.classList.contains("show") && e.key === "Escape") { e.preventDefault(); closeThemeMenu(); ta.focus(); return; }
+    var fm = document.getElementById("fileMenu");
+    if (fm && fm.classList.contains("show") && e.key === "Escape") { e.preventDefault(); closeFileMenu(); ta.focus(); return; }
+    if (scrim.classList.contains("show")) {
+      if (e.key === "Escape") { e.preventDefault(); closeSheet(); }
+      return;
+    }
+    // "?" opens help from Normal/Visual mode
+    if ((mode === "normal" || mode === "visual") && e.key === "?" && document.activeElement !== filterInput && document.activeElement !== cmdInput && document.activeElement !== $("linkSearch")) {
+      e.preventDefault(); openSheet();
+    }
+    // Ctrl+F → focus sidebar search
+    if (e.ctrlKey && !e.shiftKey && e.key === "f" && !scrim.classList.contains("show")) {
+      e.preventDefault();
+      if (focusMode) toggleFocus();   // exit focus mode first so the sidebar is visible
+      filterInput.focus(); filterInput.select();
+      return;
+    }
+    // Ctrl+Shift+F → toggle focus mode
+    if (e.ctrlKey && e.shiftKey && e.key === "F") {
+      e.preventDefault(); toggleFocus(); return;
+    }
+    // Escape from sidebar search → back to editor
+    if (e.key === "Escape" && document.activeElement === filterInput) {
+      e.preventDefault(); filterInput.blur(); ta.focus(); return;
+    }
+  });
+
+  ta.addEventListener("keydown", onKeyDown);
+  ta.addEventListener("input", function () {
+    if (mode !== "insert") return;
+    syncNote(); updateStatus();
+    var pos = ta.selectionStart;
+    if (pos >= 2 && ta.value.slice(pos - 2, pos) === "[[" && !$("linkPalette").classList.contains("show")) {
+      openLinkPalette({ replaceFrom: pos - 2, origin: "insert" });
+    }
+  });
+  ta.addEventListener("mouseup", function () {
+    if (mode === "command" || mode === "insert") return;
+    var s = ta.selectionStart, eend = ta.selectionEnd;
+    if (eend > s) { mode = "visual"; anchor = s; cur = Math.max(s, eend - 1); }
+    else { if (mode === "visual") mode = "normal"; cur = s; }
+    desiredCol = null;
+    render();
+  });
+  ta.addEventListener("focus", function () { if (mode !== "insert" && mode !== "command") render(); });
+
+  ta.addEventListener("scroll", syncGutterScroll);
+
+  // Paste: images become attachments, spreadsheet (tab-separated) text becomes a table.
+  document.addEventListener("paste", function (e) {
+    var ae = document.activeElement;
+    if (ae === filterInput || ae === cmdInput || ae === $("linkSearch")) return;  // let those inputs paste normally
+    var cd = e.clipboardData;
+    if (!cd) return;
+    var imgs = [];
+    for (var i = 0; i < cd.items.length; i++) {
+      var it = cd.items[i];
+      if (it.kind === "file" && it.type.indexOf("image/") === 0) { var f = it.getAsFile(); if (f) imgs.push(f); }
+    }
+    if (imgs.length) { e.preventDefault(); imgs.forEach(function (f) { addImageBlob(f); }); return; }
+    var text = cd.getData("text/plain");
+    if (looksLikeTSV(text)) { e.preventDefault(); var md = tsvToMarkdown(text); if (md) { insertBlock(md); toast("Pasted as a table"); } return; }
+    if (mode !== "insert" && text) { e.preventDefault(); insertAtCursor(text); }   // clean paste in reading/normal mode
+  });
+
+  // Drag & drop image files anywhere over the editor.
+  var ewrap = ta.parentElement;
+  ewrap.addEventListener("dragover", function (e) { if (e.dataTransfer && Array.prototype.some.call(e.dataTransfer.types || [], function (t) { return t === "Files"; })) { e.preventDefault(); ewrap.classList.add("drag-over"); } });
+  ewrap.addEventListener("dragleave", function (e) { if (e.target === ewrap) ewrap.classList.remove("drag-over"); });
+  ewrap.addEventListener("drop", function (e) {
+    if (!e.dataTransfer || !e.dataTransfer.files || !e.dataTransfer.files.length) return;
+    var files = Array.prototype.slice.call(e.dataTransfer.files).filter(function (f) { return f.type.indexOf("image/") === 0; });
+    if (!files.length) return;
+    e.preventDefault();
+    ewrap.classList.remove("drag-over");
+    files.forEach(function (f) { addImageBlob(f, f.name); });
+  });
+
+  window.addEventListener("resize", function () { refreshGutterLayout(); });
+  $("numBtn").addEventListener("click", toggleNumbers);
+  $("sortBtn").addEventListener("click", cycleSortBy);
+  filterInput.addEventListener("input", function () { renderTagBar(); renderList(); });
+  $("newBtn").addEventListener("click", newNote);
+  $("helpBtn").addEventListener("click", openSheet);
+  $("sheetX").addEventListener("click", closeSheet);
+  scrim.addEventListener("click", function (e) { if (e.target === scrim) closeSheet(); });
+
+  // ---- Email dialog wiring ----
+  $("composeX").addEventListener("click", closeCompose);
+  $("composeScrim").addEventListener("click", function (e) { if (e.target === this) closeCompose(); });
+  $("composeSend").addEventListener("click", sendComposed);
+  $("composeSettings").addEventListener("click", function () { closeCompose(); openSmtpSettings(); });
+  ["composeTo", "composeSubject"].forEach(function (id) {
+    $(id).addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); sendComposed(); } });
+  });
+  $("smtpX").addEventListener("click", closeSmtp);
+  $("smtpScrim").addEventListener("click", function (e) { if (e.target === this) closeSmtp(); });
+  $("smtpSave").addEventListener("click", saveSmtp);
+  $("smtpTest").addEventListener("click", testSmtp);
+  ["smtpHost", "smtpPort", "smtpUser", "smtpPass", "smtpFrom", "imapHost", "imapPort"].forEach(function (id) {
+    $(id).addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); saveSmtp(); } });
+  });
+
+  var linkSearch = $("linkSearch");
+  linkSearch.addEventListener("input", function () { renderLinkList(this.value); });
+  linkSearch.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") { e.preventDefault(); cancelLink(); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); linkSel = Math.min(linkItems.length - 1, linkSel + 1); paintLinkList(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); linkSel = Math.max(0, linkSel - 1); paintLinkList(); }
+    else if (e.key === "Enter") { e.preventDefault(); chooseLink(linkSel); }
+  });
+  $("paletteCatch").addEventListener("click", cancelLink);
+  preview.addEventListener("click", function (e) {
+    var a = e.target.closest && e.target.closest("a.ilink, a.ilink-new");
+    if (!a) return;
+    e.preventDefault();
+    openOrCreate(a.getAttribute("data-title"));
+  });
+  preview.addEventListener("click", function (e) {
+    var cb = e.target.closest && e.target.closest('input[type="checkbox"][data-line]');
+    if (!cb) return;
+    e.preventDefault();
+    var lineIdx = parseInt(cb.getAttribute("data-line"), 10);
+    var nt = active(); if (!nt) return;
+    var lines = nt.body.split("\n");
+    var line = lines[lineIdx];
+    if (!line) return;
+    var wasChecked = /^\s*[-*+]\s+\[[xX]\]/.test(line);
+    lines[lineIdx] = wasChecked
+      ? line.replace(/^(\s*[-*+]\s+)\[[xX]\]/, "$1[ ]")
+      : line.replace(/^(\s*[-*+]\s+)\[ \]/, "$1[x]");
+    pushUndo();
+    ta.value = lines.join("\n");
+    cur = clamp(cur, 0, ta.value.length);
+    syncNote();
+    renderPreview();
+  });
+  // Copy a code block's contents from its overlay button.
+  preview.addEventListener("click", function (e) {
+    var btn = e.target.closest && e.target.closest("button.code-copy");
+    if (!btn) return;
+    e.preventDefault(); e.stopPropagation();
+    var wrap = btn.closest(".md-code");
+    var code = wrap && wrap.querySelector("pre code");
+    if (!code) return;
+    copyTextToClipboard(code.textContent).then(function (ok) {
+      if (!ok) { toast("Couldn't copy that"); return; }
+      if (btn.dataset.busy) return;
+      var orig = btn.innerHTML;
+      btn.dataset.busy = "1";
+      btn.classList.add("copied");
+      btn.innerHTML = '<span class="cc-ic">✓</span><span class="cc-tx">Copied</span>';
+      setTimeout(function () {
+        btn.classList.remove("copied");
+        btn.innerHTML = orig;
+        delete btn.dataset.busy;
+      }, 1400);
+    });
+  });
+  $("prevBtn").addEventListener("click", toggleAutoPreview);
+  preview.addEventListener("dblclick", function (e) {
+    if (e.target.closest && e.target.closest("button.code-copy")) return;
+    if (mode !== "insert") enterInsert(cur);
+  });
+  // Keep modal keys working while the preview overlay is shown (so i / : / etc.
+  // still work even if focus drifted off the hidden editor).
+  document.addEventListener("keydown", function (e) {
+    if (!previewing || mode === "insert" || mode === "command") return;
+    if (e.target === ta) return;
+    var ae = document.activeElement;
+    if (ae === filterInput || ae === cmdInput || ae === $("linkSearch")) return;
+    if (scrim.classList.contains("show")) return;
+    var cs = $("composeScrim"), ss = $("smtpScrim");
+    if (cs.classList.contains("show") || ss.classList.contains("show")) return;
+    var tm = document.getElementById("themeMenu"); if (tm && tm.classList.contains("show")) return;
+    var fm = document.getElementById("fileMenu"); if (fm && fm.classList.contains("show")) return;
+    var lp = document.getElementById("linkPalette"); if (lp && lp.classList.contains("show")) return;
+    onKeyDown(e);
+  });
+  $("wrapBtn").addEventListener("click", toggleWrap);
+  $("themeBtn").addEventListener("click", function (e) { e.stopPropagation(); closeFileMenu(); toggleThemeMenu(); });
+  $("fileBtn").addEventListener("click", function (e) { e.stopPropagation(); closeThemeMenu(); toggleFileMenu(); });
+  saveDot.addEventListener("click", function () { if (pendingHandle) reconnectFile(); });
+  document.addEventListener("click", function (e) {
+    var tm = document.getElementById("themeMenu");
+    if (tm && tm.classList.contains("show") && !tm.contains(e.target) && e.target.id !== "themeBtn") closeThemeMenu();
+    var fm = document.getElementById("fileMenu");
+    if (fm && fm.classList.contains("show") && !fm.contains(e.target) && e.target.id !== "fileBtn") closeFileMenu();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Boot
+  // ---------------------------------------------------------------------------
+  buildSheet();
+  buildThemeMenu();
+  (function setFavicon() {
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">' +
+      '<defs>' +
+      '<linearGradient id="b" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1d2029"/><stop offset="1" stop-color="#0b0d11"/></linearGradient>' +
+      '<linearGradient id="c" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5fb8c9"/><stop offset="1" stop-color="#c39be6"/></linearGradient>' +
+      '</defs>' +
+      '<rect width="512" height="512" rx="116" fill="url(#b)"/>' +
+      '<g fill="#e3c188"><rect x="156" y="196" width="44" height="44" rx="13"/><rect x="156" y="272" width="44" height="44" rx="13"/></g>' +
+      '<rect x="236" y="184" width="68" height="144" rx="17" fill="url(#c)"/>' +
+      '</svg>';
+    var link = document.createElement("link");
+    link.rel = "icon"; link.type = "image/svg+xml";
+    link.href = "data:image/svg+xml," + encodeURIComponent(svg);
+    document.head.appendChild(link);
+    document.title = "modal";
+  })();
+  $("wrapBtn").classList.add("on"); // wrap is on by default
+  (async function init() {
+    var saved = await Store.load();
+    if (saved && Array.isArray(saved.notes) && saved.notes.length) {
+      state = saved;
+      if (!state.images) state.images = {};
+      var expired = purgeExpiredTrash();
+      if (expired) { scheduleSave(); toast("Cleared " + expired + " note" + (expired === 1 ? "" : "s") + " from trash (older than 30 days)"); }
+      if (!active()) state.activeId = state.notes.length ? state.notes[0].id : null;
+    }
+    var savedTheme = (saved && saved.theme) || "midnight";
+    if (savedTheme === "system") applyTheme("system", false);
+    else applyTheme(savedTheme, false);
+    numbersOn = !(saved && saved.numbers === false);
+    app.classList.toggle("with-numbers", numbersOn);
+    $("numBtn").classList.toggle("on", numbersOn);
+    autoPreview = !(saved && saved.autoPreview === false);
+    $("prevBtn").classList.toggle("on", autoPreview);
+    sortBy = (saved && saved.sortBy) || "modified";
+    updateSortLabel();
+
+    // Show whatever app storage already had, so there's no blank flash.
+    if (state.activeId && active()) openNote(state.activeId);
+    renderTagBar();
+
+    // Restore a remembered file FIRST — it may add or update notes — before we
+    // decide whether this is a genuine first run that needs a welcome note.
+    await tryReconnectFile();
+
+    // Only seed a welcome note when there's truly nothing to show and no file
+    // is connected or waiting to reconnect.
+    if (!state.notes.length && !pendingHandle && !fileHandle) {
+      var welcome = {
+        id: uid(),
+        body: "# Welcome to modal\n\nThis is a notes app with Vim-style controls, minus the pain.\n\nYou start in NORMAL mode (you move and run commands here).\nPress  i  to type. Press  Esc  to come back.\n\n## The five keys to learn first\n\n- i  to type\n- Esc  to stop typing\n- h j k l  to move (or just use arrows / the mouse)\n- dd  to delete a line\n- u  to undo\n\nThat is enough to be productive. Press  ?  to see the rest.\n\nTry it: press Esc, then press j a few times to move down here.",
+        updatedAt: Date.now()
+      };
+      state.notes = [welcome];
+      state.activeId = welcome.id;
+      openNote(welcome.id);
+      if (hasStore) Store.save(state);
+    }
+
+    // Wire the native File-menu items to the in-app handlers.
+    if (window.mailer && typeof window.mailer.onEmailNote === "function") {
+      window.mailer.onEmailNote(function () { emailNote(active()); });
+    }
+    if (window.mailer && typeof window.mailer.onEmailSettings === "function") {
+      window.mailer.onEmailSettings(function () { openSmtpSettings(); });
+    }
+    if (window.mailer && typeof window.mailer.onFetchMail === "function") {
+      window.mailer.onFetchMail(function () { fetchEmail(); });
+    }
+
+    updateSaveDot();
+    render();
+    ta.focus();
+  })();
+})();
+</script>
+

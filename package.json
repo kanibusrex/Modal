@@ -1,0 +1,62 @@
+{
+  "name": "modal-notes",
+  "productName": "modal",
+  "version": "1.0.0",
+  "description": "A Vim-inspired note editor, gentled for everyday work — packaged as a standalone desktop app.",
+  "main": "main.js",
+  "author": "modal",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win",
+    "dist:linux": "electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "^42.5.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.modal.notes",
+    "productName": "modal",
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "build/**",
+      "node_modules/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.icns",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility"
+    }
+  },
+  "dependencies": {
+    "imapflow": "^1.4.2",
+    "mailparser": "^3.9.12",
+    "nodemailer": "^6.10.1"
+  }
+}
