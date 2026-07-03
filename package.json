@@ -4,7 +4,10 @@
   "version": "1.0.0",
   "description": "A Vim-inspired note editor, gentled for everyday work — packaged as a standalone desktop app.",
   "main": "main.js",
-  "author": "modal",
+  "author": {
+    "name": "Michael Alexander",
+    "email": "michael.alexander3@gmail.com"
+  },
   "license": "MIT",
   "scripts": {
     "start": "electron .",
