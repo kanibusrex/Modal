@@ -55,6 +55,39 @@ and gives it **real, persistent storage on disk** so your notes survive restarts
     by default for most accounts).
 
 
+## Download & install
+
+Grab the latest installer for your platform from the
+[**Releases**](https://github.com/kanibusrex/Modal/releases/latest) page:
+
+| Platform | File |
+| --- | --- |
+| macOS (Apple Silicon) | `modal-<version>-arm64.dmg` |
+| macOS (Intel) | `modal-<version>.dmg` |
+| Windows (installer) | `modal.Setup.<version>.exe` |
+| Windows (portable) | `modal.<version>.exe` |
+| Linux (AppImage) | `modal-<version>.AppImage` |
+| Linux (Debian/Ubuntu) | `modal-notes_<version>_amd64.deb` |
+
+> **These builds are not code-signed**, so your OS will warn on first launch.
+> The app is fine — the warning just means it wasn't signed with a paid
+> developer certificate.
+
+**macOS** — if you see *"modal is damaged and can't be opened"*, that's
+Gatekeeper blocking an unsigned, quarantined app. Drag **modal** into your
+Applications folder, then run this once in Terminal to clear the quarantine
+flag:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/modal.app
+```
+
+Then open it normally. (Right-click → **Open** works for the milder
+*"unverified developer"* warning, but the *"damaged"* variant on Apple Silicon
+needs the `xattr` step above.)
+
+**Windows** — if SmartScreen appears, click **More info → Run anyway**.
+
 ## Run it
 
 You need [Node.js](https://nodejs.org/) (v18 or newer) installed.
