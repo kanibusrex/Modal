@@ -287,6 +287,44 @@ ipcMain.handle("mail:send", async (_evt, payload) => {
   }
 });
 
+// --- PDF export ---
+// Renders a caller-supplied HTML string in a hidden window, prints it to PDF,
+// and writes the result to the path the user chose in a save dialog.
+ipcMain.handle("export:pdf", async (_evt, payload) => {
+  payload = payload || {};
+  const html = String(payload.html || "");
+  const suggested = String(payload.filename || "note.pdf");
+
+  if (!mainWindow) return { ok: false, error: "No window available" };
+
+  const { filePath, canceled } = await dialog.showSaveDialog(mainWindow, {
+    defaultPath: path.join(app.getPath("documents"), suggested),
+    filters: [{ name: "PDF Document", extensions: ["pdf"] }],
+  });
+  if (canceled || !filePath) return { ok: false, canceled: true };
+
+  const tmpHtml = path.join(app.getPath("temp"), "modal-print-" + Date.now() + ".html");
+  try {
+    await fsp.writeFile(tmpHtml, html, "utf8");
+    const printWin = new BrowserWindow({
+      show: false,
+      webPreferences: { contextIsolation: true },
+    });
+    await printWin.loadFile(tmpHtml);
+    const pdfData = await printWin.webContents.printToPDF({
+      printBackground: true,
+      pageSize: "A4",
+    });
+    printWin.destroy();
+    try { await fsp.unlink(tmpHtml); } catch (_) {}
+    await fsp.writeFile(filePath, pdfData);
+    return { ok: true };
+  } catch (e) {
+    try { await fsp.unlink(tmpHtml); } catch (_) {}
+    return { ok: false, error: (e && e.message) || String(e) };
+  }
+});
+
 // --- IMAP: fetch the most recent INBOX messages ---
 // Read-only: we open the mailbox without marking anything seen, parse each
 // message, and return a plain-data array. The renderer turns them into notes.
@@ -457,6 +495,11 @@ function buildMenu() {
         {
           label: "Email Settings…",
           click: () => { if (mainWindow) mainWindow.webContents.send("menu:email-settings"); },
+        },
+        { type: "separator" },
+        {
+          label: "Export Note as PDF…",
+          click: () => { if (mainWindow) mainWindow.webContents.send("menu:export-pdf"); },
         },
         { type: "separator" },
         isMac ? { role: "close" } : { role: "quit" },

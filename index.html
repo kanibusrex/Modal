@@ -682,7 +682,8 @@
   .sort-btn:hover { color: var(--fg); background: var(--hover); }
 
   /* ---------- word count ---------- */
-  .status .wc { display: flex; align-items: center; padding: 0 12px; color: var(--fg-faint); font-size: 11px; }
+  .status .wc { display: flex; align-items: center; padding: 0 12px; color: var(--fg-faint); font-size: 11px; cursor: pointer; user-select: none; }
+  .status .wc:hover { color: var(--fg-dim); }
 
   /* ---------- syntax highlighting ---------- */
   .sh-kw  { color: #c39be6; }
@@ -1272,6 +1273,61 @@
       setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
       toast("Saved " + name);
     } catch (e2) { toast("Couldn't save the file here"); }
+  }
+
+  // ---------------------------------------------------------------------------
+  // PDF export
+  // ---------------------------------------------------------------------------
+  var PDF_CSS =
+    "body{font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.7;color:#1a1a1a;padding:54px 72px;margin:0;}" +
+    "h1,h2,h3{line-height:1.25;margin:1.2em 0 .5em;font-weight:650;letter-spacing:-.015em;}" +
+    "h1{font-size:1.65em;border-bottom:1px solid #e3e6ea;padding-bottom:.25em;}" +
+    "h2{font-size:1.3em;}" +
+    "h3{font-size:1.1em;color:#555;}" +
+    "p{margin:.7em 0;}" +
+    "a,.ilink,.ilink-new{color:#2563eb;text-decoration:none;}" +
+    "code{font-family:SFMono-Regular,Consolas,Menlo,monospace;font-size:.88em;background:#f4f5f7;border-radius:4px;padding:1px 5px;}" +
+    "pre{background:#f4f5f7;border:1px solid #e3e6ea;border-radius:8px;padding:14px 16px;overflow:auto;margin:.8em 0;}" +
+    "pre code{background:none;padding:0;border-radius:0;font-size:.85em;}" +
+    "blockquote{margin:.8em 0;padding:.2em 1em;border-left:3px solid #d0d4da;color:#555;}" +
+    ".md-table-wrap{overflow-x:auto;margin:.9em 0;border:1px solid #e3e6ea;border-radius:8px;}" +
+    ".md-table{border-collapse:collapse;width:100%;font-size:.94em;}" +
+    ".md-table th,.md-table td{padding:7px 12px;border-bottom:1px solid #e3e6ea;border-right:1px solid #e3e6ea;text-align:left;vertical-align:top;}" +
+    ".md-table th{background:#f4f5f7;font-weight:600;}" +
+    ".md-table tr:last-child td{border-bottom:none;}" +
+    ".md-table th:last-child,.md-table td:last-child{border-right:none;}" +
+    "img,.md-img{max-width:100%;height:auto;border-radius:6px;display:block;margin:.7em 0;}" +
+    "ul,ol{padding-left:1.5em;}" +
+    "li{margin:.25em 0;}" +
+    "hr{border:none;border-top:1px solid #e3e6ea;margin:1.4em 0;}" +
+    ".task-item{list-style:none;}" +
+    "ul:has(.task-item){padding-left:0;}" +
+    ".md-code{position:relative;}" +
+    ".code-copy{display:none!important;}" +
+    ".backlinks{display:none;}" +
+    "del{text-decoration:line-through;}" +
+    ".sh-kw{color:#7c3aed;}.sh-str{color:#059669;}.sh-num{color:#b45309;}.sh-cmt{color:#6b7280;font-style:italic;}.sh-fn{color:#2563eb;}.sh-op{color:#0891b2;}";
+
+  async function exportPdf() {
+    var note = active();
+    if (!note) { toast("No note to export"); return; }
+    if (!(window.pdfExporter && typeof window.pdfExporter.export === "function")) {
+      toast("PDF export isn't available in this build"); return;
+    }
+    var inner = renderMarkdown(note.body || "");
+    inner = inner.replace(/<input type="checkbox"([^>]*?)\/>/g, function (_, attrs) {
+      return /checked/.test(attrs) ? "☑ " : "☐ ";
+    });
+    var html = '<!doctype html><html><head><meta charset="utf-8"/><style>' + PDF_CSS +
+      '</style></head><body>' + inner + '</body></html>';
+    var filename = sanitizeName(titleOf(note)) + ".pdf";
+    toast("Preparing PDF…");
+    var res;
+    try { res = await window.pdfExporter.export({ html: html, filename: filename }); }
+    catch (e) { res = { ok: false, error: String(e) }; }
+    if (!res || res.canceled) return;
+    if (res.ok) toast("PDF saved");
+    else toast("PDF failed: " + (res.error || "unknown error"));
   }
 
   // ---------------------------------------------------------------------------
@@ -1915,6 +1971,7 @@
     }
     row("⤒", "Open .md file…", function () { closeFileMenu(); openMarkdownFiles(); });
     if (active()) row("⤓", "Save this note as .md…", function () { closeFileMenu(); saveNoteAsMd(active()); });
+    if (active()) row("⎙", "Export note as PDF…", function () { closeFileMenu(); exportPdf(); });
     row("↓", "Download backup (.json)", function () { closeFileMenu(); downloadExport(); });
     row("⧉", "Copy notes as JSON", function () { closeFileMenu(); copyJson(); });
     row("↑", "Import from .json…", function () { closeFileMenu(); importFile(); });
@@ -2040,6 +2097,7 @@
   var gutter = $("gutter");
   var gutterInner = $("gutterInner");
   var numbersOn = true;
+  var relativeNumbers = false;
   var lnumEls = [];
   var lastGutterText = null;
   var MIRROR_PROPS = ["fontFamily", "fontSize", "fontWeight", "lineHeight", "letterSpacing",
@@ -2098,7 +2156,10 @@
   }
   function highlightCurrentLine() {
     var idx = ta.value.slice(0, mode === "insert" ? ta.selectionStart : cur).split("\n").length - 1;
-    for (var i = 0; i < lnumEls.length; i++) lnumEls[i].classList.toggle("cur", i === idx);
+    for (var i = 0; i < lnumEls.length; i++) {
+      lnumEls[i].classList.toggle("cur", i === idx);
+      if (relativeNumbers) lnumEls[i].textContent = i === idx ? String(idx + 1) : String(Math.abs(i - idx));
+    }
   }
   function syncGutterScroll() {
     if (numbersOn) gutterInner.style.transform = "translateY(" + (-ta.scrollTop) + "px)";
@@ -2130,7 +2191,16 @@
     posEl.textContent = "Ln " + line.length + ", Col " + (line[line.length - 1].length + 1);
     var words = ta.value.trim() ? ta.value.trim().split(/\s+/).length : 0;
     var wcEl = document.getElementById("wc");
-    if (wcEl) wcEl.textContent = words + "w";
+    if (wcEl) {
+      if (showChars) {
+        wcEl.textContent = ta.value.length + "c";
+        wcEl.title = words + " words";
+      } else {
+        var readMins = words >= 200 ? " · ~" + Math.ceil(words / 200) + "m" : "";
+        wcEl.textContent = words + "w" + readMins;
+        wcEl.title = ta.value.length + " characters";
+      }
+    }
     var n = active();
     fileName.textContent = n ? titleOf(n).toLowerCase().replace(/\s+/g, "-").slice(0, 28) + ".md" : "untitled";
   }
@@ -2686,6 +2756,15 @@
     else if (c === "savefile" || c === "autosave") { connectFile(); }
     else if (c === "file") { toggleFileMenu(); }
     else if (c === "dedupe" || c === "dedup" || c === "duplicates") { removeDuplicates(); }
+    else if (c === "pdf" || c === "exportpdf") { exportPdf(); }
+    else if (c === "rnu" || c === "relativenumber" || c === "relativenumbers") {
+      relativeNumbers = !relativeNumbers;
+      state.relativeNumbers = relativeNumbers;
+      scheduleSave();
+      lastGutterText = null;
+      render();
+      toast(relativeNumbers ? "Relative line numbers" : "Absolute line numbers");
+    }
     else if (c === "link") { openLinkPalette({ insertAt: cur, origin: "normal" }); }
     else if (c === "go" || c === "b" || c === "buffer" || c === "switch") { openLinkPalette({ action: "open", origin: "normal" }); }
     else if (c === "numbers" || c === "number" || c === "nu") { toggleNumbers(); }
@@ -3605,6 +3684,7 @@
     ta.focus();
   }
   var focusMode = false;
+  var showChars = false;
   function toggleFocus() {
     focusMode = !focusMode;
     document.body.classList.toggle("focus-mode", focusMode);
@@ -3714,6 +3794,7 @@
     ["Commands ( : )", [
       [":w", "save now"],
       [":saveas", "save this note as .md"],
+      [":pdf", "export this note as a PDF"],
       [":mail", "email this note via your SMTP account"],
       [":reply", "draft a reply to the current fetched email"],
       [":mailsetup", "configure email (SMTP + IMAP) settings"],
@@ -3731,6 +3812,7 @@
       [":sort", "cycle sort order"],
       [":wrap", "toggle line wrap"],
       [":numbers", "toggle line numbers"],
+      [":rnu", "toggle relative line numbers"],
       [":preview", "auto-preview when not editing"],
       [":theme", "change color scheme"],
       [":savefile", "autosave to a .json file"],
@@ -3956,6 +4038,7 @@
     onKeyDown(e);
   });
   $("wrapBtn").addEventListener("click", toggleWrap);
+  $("wc").addEventListener("click", function () { showChars = !showChars; updateStatus(); });
   $("themeBtn").addEventListener("click", function (e) { e.stopPropagation(); closeFileMenu(); toggleThemeMenu(); });
   $("fileBtn").addEventListener("click", function (e) { e.stopPropagation(); closeThemeMenu(); toggleFileMenu(); });
   saveDot.addEventListener("click", function () { if (pendingHandle) reconnectFile(); });
@@ -4007,6 +4090,8 @@
     $("prevBtn").classList.toggle("on", autoPreview);
     sortBy = (saved && saved.sortBy) || "modified";
     updateSortLabel();
+    relativeNumbers = !!(saved && saved.relativeNumbers);
+    if (relativeNumbers) lastGutterText = null;
 
     // Show whatever app storage already had, so there's no blank flash.
     if (state.activeId && active()) openNote(state.activeId);
@@ -4039,6 +4124,9 @@
     }
     if (window.mailer && typeof window.mailer.onFetchMail === "function") {
       window.mailer.onFetchMail(function () { fetchEmail(); });
+    }
+    if (window.pdfExporter && typeof window.pdfExporter.onExportPdf === "function") {
+      window.pdfExporter.onExportPdf(function () { exportPdf(); });
     }
 
     updateSaveDot();

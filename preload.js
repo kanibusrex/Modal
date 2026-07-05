@@ -40,3 +40,10 @@ contextBridge.exposeInMainWorld("mailer", {
   onEmailSettings: (cb) => ipcRenderer.on("menu:email-settings", () => cb()),
   onFetchMail: (cb) => ipcRenderer.on("menu:fetch-mail", () => cb()),
 });
+
+// PDF export. The renderer builds the HTML; main renders it in a hidden window
+// and writes the resulting PDF to wherever the user's save dialog points.
+contextBridge.exposeInMainWorld("pdfExporter", {
+  export: (payload) => ipcRenderer.invoke("export:pdf", payload),
+  onExportPdf: (cb) => ipcRenderer.on("menu:export-pdf", () => cb()),
+});
