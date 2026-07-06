@@ -1145,9 +1145,29 @@
       "--bg":"#f7f4ec","--bg-deep":"#ece5d6","--panel":"#fffdf7","--panel-2":"#f1ebdd",
       "--line":"#d9d0bd","--line-soft":"#e7e0cf","--fg":"#2c2a26","--fg-dim":"#6b6557","--fg-faint":"#9c9482",
       "--m-normal":"#2b8a99","--m-insert":"#4f9a2f","--m-visual":"#8a4fc4","--m-command":"#b07d18",
-      "--accent":"#2f6fd0","--danger":"#c0392b","--on-accent":"#ffffff" } }
+      "--accent":"#2f6fd0","--danger":"#c0392b","--on-accent":"#ffffff" } },
+    ocean: { label: "Ocean · deep blue", vars: {
+      "--bg":"#0d1b2a","--bg-deep":"#070f18","--panel":"#122236","--panel-2":"#172b44",
+      "--line":"#1e3a56","--line-soft":"#152840","--fg":"#c8dff5","--fg-dim":"#6e96bb","--fg-faint":"#3d6482",
+      "--m-normal":"#4fc3f7","--m-insert":"#80cfa9","--m-visual":"#ce93d8","--m-command":"#ffcc80",
+      "--accent":"#38a8f5","--danger":"#ef5350","--on-accent":"#070f18" } },
+    citrus: { label: "Citrus · orange / dark", vars: {
+      "--bg":"#1a1508","--bg-deep":"#100e04","--panel":"#221c0b","--panel-2":"#2c2410",
+      "--line":"#3d3214","--line-soft":"#28200d","--fg":"#f0e6c8","--fg-dim":"#b89e68","--fg-faint":"#7a6740",
+      "--m-normal":"#f5a623","--m-insert":"#a8c26e","--m-visual":"#d97cf5","--m-command":"#f5c842",
+      "--accent":"#f5820a","--danger":"#e05252","--on-accent":"#100e04" } },
+    aurora: { label: "Aurora · purple / teal", vars: {
+      "--bg":"#160f22","--bg-deep":"#0e0917","--panel":"#1d1530","--panel-2":"#261d3d",
+      "--line":"#362850","--line-soft":"#1f1737","--fg":"#e2d4f8","--fg-dim":"#9d88c4","--fg-faint":"#5e4d7a",
+      "--m-normal":"#a78bfa","--m-insert":"#34d399","--m-visual":"#f472b6","--m-command":"#fbbf24",
+      "--accent":"#7c3aed","--danger":"#f87171","--on-accent":"#e2d4f8" } },
+    slate: { label: "Slate · light blue", vars: {
+      "--bg":"#eef2f8","--bg-deep":"#dde5f0","--panel":"#f8fafd","--panel-2":"#e8edf6",
+      "--line":"#c8d3e6","--line-soft":"#dce4f0","--fg":"#1e2a3a","--fg-dim":"#4a6080","--fg-faint":"#8096b0",
+      "--m-normal":"#1565c0","--m-insert":"#2e7d32","--m-visual":"#6a1b9a","--m-command":"#e65100",
+      "--accent":"#1976d2","--danger":"#c62828","--on-accent":"#ffffff" } }
   };
-  var THEME_ORDER = ["system", "midnight", "ember", "lantern", "frost", "grove", "paper"];
+  var THEME_ORDER = ["system", "midnight", "ember", "lantern", "frost", "grove", "paper", "ocean", "citrus", "aurora", "slate"];
   THEMES["system"] = { label: "System · follows OS" };
   if (window.matchMedia) {
     window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", function () {
@@ -3330,8 +3350,6 @@
       el.appendChild(dh);
       el.draggable = true;
       el.addEventListener("dragstart", function(e) { noteDragStart(e, nt.id); });
-      el.addEventListener("dragover",  function(e) { noteDragOver(e,  nt.id); });
-      el.addEventListener("drop",      function(e) { noteDragDrop(e,  nt.id); });
       el.addEventListener("dragend",   cleanDrag);
     }
 
@@ -4366,12 +4384,21 @@
     if (e.key === "Escape" && document.activeElement === filterInput) {
       e.preventDefault(); filterInput.blur(); ta.focus(); return;
     }
+    // No note selected + printable key → create a new note and start typing
+    if (!active() && !e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1 &&
+        document.activeElement !== filterInput && document.activeElement !== cmdInput) {
+      e.preventDefault();
+      newNote();
+      ta.value = e.key;
+      ta.selectionStart = ta.selectionEnd = 1;
+      syncNote(); updateStatus();
+    }
   });
 
   ta.addEventListener("keydown", onKeyDown);
   ta.addEventListener("input", function () {
     if (mode !== "insert") return;
-    syncNote(); updateStatus();
+    syncNote(); updateStatus(); updateGutter();
     var pos = ta.selectionStart;
     if (pos >= 2 && ta.value.slice(pos - 2, pos) === "[[" && !$("linkPalette").classList.contains("show")) {
       openLinkPalette({ replaceFrom: pos - 2, origin: "insert" });
@@ -4424,6 +4451,20 @@
   $("sortBtn").addEventListener("click", cycleSortBy);
   filterInput.addEventListener("input", function () { renderTagBar(); renderList(); });
   $("newBtn").addEventListener("click", newNote);
+
+  // Delegated drag-over/drop on the list container so events that land on
+  // child elements (.ni-title, .ni-meta, etc.) are still caught correctly.
+  noteList.addEventListener("dragover", function(e) {
+    if (!dragSrcId) return;
+    var item = e.target.closest(".note-item");
+    if (!item || !item.dataset.id) return;
+    noteDragOver(e, item.dataset.id);
+  });
+  noteList.addEventListener("drop", function(e) {
+    var item = e.target.closest(".note-item");
+    if (!item || !item.dataset.id) return;
+    noteDragDrop(e, item.dataset.id);
+  });
   $("helpBtn").addEventListener("click", openSheet);
   $("sheetX").addEventListener("click", closeSheet);
   scrim.addEventListener("click", function (e) { if (e.target === scrim) closeSheet(); });
