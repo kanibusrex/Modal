@@ -746,6 +746,47 @@
   .focus-mode #editor { padding: 32px min(20%, 120px) 80px; }
   .focus-mode #preview { padding: 32px min(20%, 120px) 80px; }
 
+  /* ---------- note history palette ---------- */
+  .hist-palette {
+    position: fixed; z-index: 71; top: 84px; left: 50%;
+    transform: translateX(-50%) translateY(-8px) scale(.99);
+    width: min(580px, 92vw); max-height: 420px; overflow-y: auto;
+    background: color-mix(in srgb, var(--panel) 88%, transparent);
+    backdrop-filter: blur(16px) saturate(1.15);
+    border: 1px solid var(--line-soft);
+    border-radius: var(--r-lg); box-shadow: var(--shadow-2);
+    padding: 10px; display: none; opacity: 0;
+    transition: opacity .16s, transform .16s cubic-bezier(.2,.8,.3,1);
+    font-family: var(--ui);
+  }
+  .hist-palette.show { display: block; opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+  .hist-item { padding: 9px 12px; border-radius: var(--r-sm); cursor: pointer; }
+  .hist-item:hover { background: var(--hover); }
+  .hist-item.sel { background: var(--accent-dim); }
+  .hist-item .hi-time { font-size: 12px; font-weight: 500; color: var(--fg-dim); margin-bottom: 2px; }
+  .hist-item .hi-preview { font-size: 11px; color: var(--fg-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hist-head { font-size: 10px; text-transform: uppercase; letter-spacing: .14em; color: var(--fg-faint); padding: 5px 9px 10px; font-weight: 600; }
+
+  /* ---------- template + encryption indicators ---------- */
+  .ni-tmpl { color: var(--m-visual); font-size: 10px; margin-left: 4px; opacity: .85; }
+  .ni-enc  { color: var(--m-command); font-size: 11px; margin-left: 4px; opacity: .9; }
+
+  /* ---------- drag-to-reorder ---------- */
+  .note-item .drag-handle {
+    position: absolute; left: 2px; top: 50%; transform: translateY(-50%);
+    color: var(--fg-faint); font-size: 11px; letter-spacing: -1px;
+    cursor: grab; padding: 2px 4px; opacity: 0; transition: opacity .1s;
+    user-select: none; line-height: 1;
+  }
+  .sort-manual .note-item:hover .drag-handle { opacity: 1; }
+  .sort-manual .note-item { padding-left: 20px; }
+  .note-item.drag-over-top { box-shadow: 0 -2px 0 var(--accent); }
+  .note-item.drag-over-bot { box-shadow: 0  2px 0 var(--accent); }
+  .note-item.dragging      { opacity: .35; }
+
+  /* ---------- encrypt password dialog ---------- */
+  .enc-sheet { width: min(360px, 100%); }
+
   @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; animation: none !important; }
   }
@@ -913,6 +954,41 @@
   </div>
 </div>
 
+<!-- Note history palette -->
+<div class="palette-catch" id="histCatch"></div>
+<div class="hist-palette" id="histPalette" role="dialog" aria-label="Note history">
+  <div class="hist-head">Note history — click to restore</div>
+  <div id="histList"></div>
+</div>
+
+<!-- Template picker (reuses palette structure) -->
+<div class="palette-catch" id="tmplCatch"></div>
+<div class="palette" id="tmplPalette" role="dialog" aria-label="Create from template">
+  <div class="palette-head" id="tmplHead">Create from template</div>
+  <div class="palette-list" id="tmplList"></div>
+</div>
+
+<!-- Encrypt / unlock password dialog -->
+<div class="scrim" id="encScrim">
+  <div class="sheet enc-sheet" role="dialog" aria-label="Note encryption">
+    <div class="sheet-head">
+      <h2 id="encTitle">Encrypt note</h2>
+      <button class="x" id="encX">close · Esc</button>
+    </div>
+    <div class="ef" style="margin-top:16px">
+      <label class="ef-row">
+        <span id="encPassLabel">Password</span>
+        <input id="encPass" type="password" autocomplete="off" placeholder="Enter password" />
+      </label>
+      <div class="ef-note" id="encNote"></div>
+      <div class="ef-actions">
+        <button class="ef-btn" id="encCancel">Cancel</button>
+        <button class="ef-btn primary" id="encConfirm">Encrypt</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 (function () {
   "use strict";
@@ -998,7 +1074,7 @@
   };
 
   var mode = "normal";  // normal | insert | visual | command
-  var sortBy = "modified"; // modified | alpha | created
+  var sortBy = "modified"; // modified | alpha | created | manual
   var activeTag = null;    // currently selected tag filter
   var cur = 0;          // logical caret index in the buffer
   var desiredCol = null;// remembered column for vertical motion
@@ -1010,6 +1086,8 @@
   var awaitChar = "";   // for r<char>
   var lastSearch = "";
   var undoStack = [], redoStack = [];
+  var sessionPassword = null;  // held in memory only; cleared on app reload
+  var sessionEncKey   = null;  // derived CryptoKey; cleared on app reload
 
   // ---------------------------------------------------------------------------
   // Elements
@@ -1174,7 +1252,11 @@
   }
 
   function exportData() {
-    return { app: "modal", version: 1, exportedAt: new Date().toISOString(), theme: currentTheme, notes: state.notes, images: state.images };
+    var notes = state.notes.map(function(n) {
+      if (!n.encrypted) return n;
+      return Object.assign({}, n, { body: "" }); // plaintext never leaves memory
+    });
+    return { app: "modal", version: 1, exportedAt: new Date().toISOString(), theme: currentTheme, notes: notes, images: state.images };
   }
   function stamp() {
     var d = new Date(), p = function (n) { return (n < 10 ? "0" : "") + n; };
@@ -1758,14 +1840,83 @@
     state.notes.forEach(function (n) { byId[n.id] = n; });
     fileNotes.forEach(function (fn) {
       if (!fn || typeof fn.body !== "string") return;
-      var id = fn.id || uid();
-      var incoming = { id: id, body: fn.body, updatedAt: fn.updatedAt || 0 };
-      var cur = byId[id];
-      if (!cur) { byId[id] = incoming; changed = true; }
-      else if ((incoming.updatedAt || 0) > (cur.updatedAt || 0)) { byId[id] = incoming; changed = true; }
+      if (!fn.id) fn = Object.assign({}, fn, { id: uid() });
+      var cur = byId[fn.id];
+      if (!cur) { byId[fn.id] = fn; changed = true; }
+      else if ((fn.updatedAt || 0) > (cur.updatedAt || 0)) {
+        // Preserve in-memory plaintext for unlocked encrypted notes
+        var merged = Object.assign({}, fn);
+        if (merged.encrypted && cur.body) merged.body = cur.body;
+        byId[fn.id] = merged; changed = true;
+      }
     });
     return { merged: Object.keys(byId).map(function (k) { return byId[k]; }), changed: changed };
   }
+  // ---------------------------------------------------------------------------
+  // Note history (snapshots)
+  // ---------------------------------------------------------------------------
+  var MAX_SNAPS = 40;
+  var SNAP_GAP_MS = 60000; // coalesce saves within the same minute
+
+  function takeSnapshot(note) {
+    if (!note || !note.body) return;
+    if (!note.snapshots) note.snapshots = [];
+    var snaps = note.snapshots;
+    var last = snaps[snaps.length - 1];
+    if (last && last.body === note.body) return; // no change
+    if (last && Date.now() - last.ts < SNAP_GAP_MS) {
+      last.body = note.body; last.ts = Date.now(); return; // update recent slot
+    }
+    snaps.push({ body: note.body, ts: Date.now() });
+    if (snaps.length > MAX_SNAPS) snaps.shift();
+  }
+
+  var histSel = 0, histItems = [];
+  function openHistPalette() {
+    var nt = active();
+    if (!nt) { toast("No note selected"); return; }
+    histItems = (nt.snapshots || []).slice().reverse();
+    if (!histItems.length) { toast("No history for this note yet"); return; }
+    histSel = 0;
+    $("histCatch").classList.add("show");
+    $("histPalette").classList.add("show");
+    paintHistList();
+  }
+  function paintHistList() {
+    var list = $("histList"); list.innerHTML = "";
+    histItems.forEach(function (snap, i) {
+      var el = document.createElement("div");
+      el.className = "hist-item" + (i === histSel ? " sel" : "");
+      var d = new Date(snap.ts);
+      var t = document.createElement("div"); t.className = "hi-time";
+      t.textContent = d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
+        "  " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+      var p = document.createElement("div"); p.className = "hi-preview";
+      var first = (snap.body || "").split("\n").find(function(l){return l.trim().length;}) || "(empty)";
+      p.textContent = first.replace(/^#+\s*/, "").trim().slice(0, 100);
+      el.appendChild(t); el.appendChild(p);
+      el.addEventListener("mousedown", function(ev) { ev.preventDefault(); restoreHistSnap(i); });
+      list.appendChild(el);
+    });
+  }
+  function restoreHistSnap(i) {
+    var snap = histItems[i]; if (!snap) return;
+    var nt = active(); if (!nt) return;
+    takeSnapshot(nt);   // archive current state before replacing
+    pushUndo();
+    nt.body = snap.body;
+    ta.value = snap.body;
+    cur = 0;
+    closeHistPalette();
+    syncNote();
+    render();
+    toast("Restored snapshot from " + new Date(snap.ts).toLocaleTimeString());
+  }
+  function closeHistPalette() {
+    $("histPalette").classList.remove("show");
+    $("histCatch").classList.remove("show");
+  }
+
   function reloadActive() {
     var n = active();
     ta.value = n ? n.body : "";
@@ -1774,6 +1925,61 @@
     enterNormal(false);
     if (previewing) renderPreview();
     render();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Note templates
+  // ---------------------------------------------------------------------------
+  function templateNotes() {
+    return state.notes.filter(function(n) { return n.isTemplate && !n.deleted; });
+  }
+  function saveAsTemplate() {
+    var nt = active(); if (!nt) return;
+    nt.isTemplate = true;
+    scheduleSave(); renderList();
+    toast("Saved as template · :untemplate to remove");
+  }
+  function unmarkTemplate() {
+    var nt = active(); if (!nt) return;
+    delete nt.isTemplate;
+    scheduleSave(); renderList();
+    toast("Template mark removed");
+  }
+  function openTemplatePalette() {
+    var tmpls = templateNotes();
+    var list = $("tmplList"); list.innerHTML = "";
+    if (!tmpls.length) {
+      var empty = document.createElement("div");
+      empty.className = "palette-empty";
+      empty.textContent = "No templates yet — use :savetemplate on any note.";
+      list.appendChild(empty);
+    } else {
+      tmpls.forEach(function(t) {
+        var el = document.createElement("div"); el.className = "palette-item";
+        var ti = document.createElement("span"); ti.className = "pi-title"; ti.textContent = titleOf(t);
+        var tag = document.createElement("span"); tag.className = "pi-tag"; tag.textContent = "template";
+        el.appendChild(ti); el.appendChild(tag);
+        el.addEventListener("mousedown", function(ev) { ev.preventDefault(); createFromTemplate(t.id); });
+        list.appendChild(el);
+      });
+    }
+    $("tmplCatch").classList.add("show");
+    $("tmplPalette").classList.add("show");
+  }
+  function createFromTemplate(id) {
+    var tmpl = state.notes.find(function(n) { return n.id === id; });
+    if (!tmpl) return;
+    closeTmplPalette();
+    var now = Date.now();
+    var nt = { id: uid(), body: tmpl.body, updatedAt: now, createdAt: now };
+    state.notes.push(nt);
+    openNote(nt.id);
+    scheduleSave(); renderList();
+    toast("Created from template “" + titleOf(tmpl) + "”");
+  }
+  function closeTmplPalette() {
+    $("tmplPalette").classList.remove("show");
+    $("tmplCatch").classList.remove("show");
   }
 
   // Duplicate cleanup: notes with identical text collapse to the newest copy.
@@ -1854,16 +2060,35 @@
     if (!fsSupported) { toast("This browser can't autosave directly to a file"); return; }
     var h;
     try {
-      h = await window.showSaveFilePicker({
+      // Use showOpenFilePicker so the file is not truncated before we read it.
+      // We request readwrite up front so a second permission prompt isn't needed.
+      var handles = await window.showOpenFilePicker({
         suggestedName: "modal-notes.json",
-        types: [{ description: "JSON", accept: { "application/json": [".json"] } }]
+        types: [{ description: "JSON", accept: { "application/json": [".json"] } }],
+        multiple: false,
+        id: "modal-link"
       });
+      h = handles[0];
+      // Ensure we have write permission before handing off to adoptFile.
+      if (h.requestPermission) {
+        var perm = await h.requestPermission({ mode: "readwrite" });
+        if (perm !== "granted") { toast("Write permission needed to autosave"); return; }
+      }
     } catch (e) {
       if (e && e.name === "AbortError") return;   // user cancelled the picker
-      fileBlocked = true;
-      toast("File access is blocked here — open this page in Chrome/Edge to autosave");
-      renderFileMenu();
-      return;
+      // showOpenFilePicker not available — fall back to showSaveFilePicker
+      try {
+        h = await window.showSaveFilePicker({
+          suggestedName: "modal-notes.json",
+          types: [{ description: "JSON", accept: { "application/json": [".json"] } }]
+        });
+      } catch (e2) {
+        if (e2 && e2.name === "AbortError") return;
+        fileBlocked = true;
+        toast("File access is blocked here — open this page in Chrome/Edge to autosave");
+        renderFileMenu();
+        return;
+      }
     }
     var note = await adoptFile(h);
     toast("Autosaving to " + linkedName + note);
@@ -2003,11 +2228,13 @@
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
   function titleOf(note) {
+    if (note.encrypted && !note.body) return "[Encrypted]";
     var first = (note.body || "").split("\n").find(function (l) { return l.trim().length; });
     if (!first) return "Untitled";
     return first.replace(/^#+\s*/, "").trim().slice(0, 60) || "Untitled";
   }
   function snippetOf(note) {
+    if (note.encrypted && !note.body) return "🔒 locked";
     var lines = (note.body || "").split("\n").filter(function (l) { return l.trim().length; });
     return (lines[1] || lines[0] || "").trim().slice(0, 60);
   }
@@ -2032,6 +2259,8 @@
     saveTimer = setTimeout(commitSave, 450);
   }
   async function commitSave() {
+    takeSnapshot(active()); // archive a snapshot on every save (deduplicated by takeSnapshot)
+    await reEncryptAll();   // update encBody for any unlocked encrypted notes
     var ok = await Store.save(state);
     saveDot.classList.remove("dirty");
     modDot.textContent = "";
@@ -2222,6 +2451,7 @@
   function syncNote() {
     var n = active();
     if (!n) return;
+    if (n.encrypted && !n.body && !ta.value) return; // don't clobber locked note
     n.body = ta.value;
     n.updatedAt = Date.now();
     renderListItem(n.id);
@@ -2707,7 +2937,7 @@
     mode = "command";
     cmdLead.textContent = lead;
     cmdInput.value = "";
-    cmdGhost.textContent = lead === ":" ? "try  w · new · link · savefile · export · import · theme · help" : "type to search · Enter to jump";
+    cmdGhost.textContent = lead === ":" ? "try  w · new · link · history · savetemplate · template · encrypt · theme · help" : "type to search · Enter to jump";
     cmdline.classList.add("show");
     setModeColor();
     modeBlock.textContent = "COMMAND";
@@ -2777,6 +3007,12 @@
     else if (c === "pin") { var nt2 = active(); if (nt2) { nt2.pinned = true; scheduleSave(); renderList(); toast("Note pinned"); } }
     else if (c === "unpin") { var nt3 = active(); if (nt3) { delete nt3.pinned; scheduleSave(); renderList(); toast("Note unpinned"); } }
     else if (c === "focus") { toggleFocus(); }
+    else if (c === "history" || c === "hist") { openHistPalette(); }
+    else if (c === "savetemplate" || c === "template!" || c === "tmpl") { saveAsTemplate(); }
+    else if (c === "untemplate" || c === "notmpl") { unmarkTemplate(); }
+    else if (c === "template" || c === "newtemplate" || c === "fromtemplate") { openTemplatePalette(); }
+    else if (c === "encrypt" || c === "enc") { toggleNoteEncryption(); }
+    else if (c === "unlock" || c === "decrypt") { var nt4 = active(); if (nt4 && nt4.encrypted) toggleNoteEncryption(); else toast("Note is not encrypted"); }
     else if (/^s\//.test(c)) {
       // :s/old/new/ or :s/old/new/g
       var parts = c.slice(2).split("/");
@@ -2797,17 +3033,209 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Encryption (AES-GCM / PBKDF2) — one app-level key derived from the user's
+  // session password + a per-app salt stored in state.  All encrypted notes share
+  // the same key so one unlock/encrypt password covers everything.
+  // ---------------------------------------------------------------------------
+  async function deriveEncKey(password) {
+    var enc = new TextEncoder();
+    if (!state.encSalt) {
+      var sb = crypto.getRandomValues(new Uint8Array(16));
+      state.encSalt = btoa(String.fromCharCode.apply(null, sb));
+    }
+    var salt = Uint8Array.from(atob(state.encSalt), function(c){ return c.charCodeAt(0); });
+    var km = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveKey"]);
+    return crypto.subtle.deriveKey(
+      { name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256" },
+      km, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]
+    );
+  }
+  async function aesEncrypt(key, text) {
+    var iv = crypto.getRandomValues(new Uint8Array(12));
+    var ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, key, new TextEncoder().encode(text));
+    var out = new Uint8Array(12 + ct.byteLength);
+    out.set(iv); out.set(new Uint8Array(ct), 12);
+    return btoa(String.fromCharCode.apply(null, out));
+  }
+  async function aesDecrypt(key, b64) {
+    var raw = Uint8Array.from(atob(b64), function(c){ return c.charCodeAt(0); });
+    var pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: raw.slice(0,12) }, key, raw.slice(12));
+    return new TextDecoder().decode(pt);
+  }
+
+  var encPendingNoteId = null, encPendingMode = "encrypt";
+  function openEncryptDialog(mode, noteId) {
+    encPendingMode  = mode;
+    encPendingNoteId = noteId;
+    $("encTitle").textContent      = mode === "encrypt" ? "Encrypt note" : mode === "unlock" ? "Unlock note" : "Remove encryption";
+    $("encPassLabel").textContent  = "Password";
+    $("encConfirm").textContent    = mode === "encrypt" ? "Encrypt" : "Unlock";
+    $("encPass").value = ""; $("encNote").textContent = ""; $("encNote").className = "ef-note";
+    $("encScrim").classList.add("show");
+    setTimeout(function(){ $("encPass").focus(); }, 0);
+  }
+  function closeEncryptDialog() { $("encScrim").classList.remove("show"); ta.focus(); }
+
+  async function confirmEncrypt() {
+    var pass = $("encPass").value;
+    if (!pass) { setEfNote("encNote", "Enter a password.", "err"); return; }
+    var nt = state.notes.find(function(n){ return n.id === encPendingNoteId; });
+    if (!nt) { closeEncryptDialog(); return; }
+
+    $("encConfirm").disabled = true;
+    try {
+      var key = await deriveEncKey(pass);
+      if (encPendingMode === "encrypt") {
+        nt.encBody    = await aesEncrypt(key, nt.body || "");
+        nt.encrypted  = true;
+        sessionEncKey = key; sessionPassword = pass;
+        // body stays in memory; exportData strips it before persisting
+        closeEncryptDialog(); scheduleSave(); renderList();
+        toast("Note encrypted · password required to read it on next launch");
+      } else {
+        // unlock or remove
+        var plain;
+        try { plain = await aesDecrypt(key, nt.encBody); }
+        catch(e) { setEfNote("encNote", "Wrong password.", "err"); $("encConfirm").disabled = false; return; }
+        sessionEncKey = key; sessionPassword = pass;
+        nt.body = plain;
+        if (encPendingMode === "remove") {
+          delete nt.encrypted; delete nt.encBody;
+          closeEncryptDialog(); scheduleSave(); renderList();
+          ta.value = plain; cur = 0; render();
+          toast("Encryption removed");
+        } else {
+          closeEncryptDialog(); scheduleSave(); renderList();
+          if (state.activeId === nt.id) { ta.value = plain; cur = 0; render(); if (previewing) renderPreview(); }
+          toast("Note unlocked · will re-lock on next launch");
+        }
+      }
+    } catch(e) {
+      setEfNote("encNote", "Error: " + (e.message || e), "err");
+    }
+    $("encConfirm").disabled = false;
+  }
+
+  async function toggleNoteEncryption() {
+    var nt = active(); if (!nt) return;
+    if (!window.crypto || !window.crypto.subtle) { toast("Web Crypto not available in this environment"); return; }
+    if (nt.encrypted) {
+      if (nt.body) {
+        // Already unlocked — offer to remove encryption
+        openEncryptDialog("remove", nt.id);
+      } else {
+        // Locked — offer to unlock
+        if (sessionEncKey) {
+          // Try with cached key first
+          try {
+            nt.body = await aesDecrypt(sessionEncKey, nt.encBody);
+            scheduleSave(); renderList();
+            ta.value = nt.body; cur = 0; render(); if (previewing) renderPreview();
+            toast("Note unlocked · will re-lock on next launch");
+            return;
+          } catch(e) { /* cached key didn't work, fall through */ }
+        }
+        openEncryptDialog("unlock", nt.id);
+      }
+    } else {
+      if (sessionEncKey) {
+        // Re-use cached session key
+        nt.encBody   = await aesEncrypt(sessionEncKey, nt.body || "");
+        nt.encrypted = true;
+        scheduleSave(); renderList();
+        toast("Note encrypted");
+      } else {
+        openEncryptDialog("encrypt", nt.id);
+      }
+    }
+  }
+
+  // Before persisting, re-encrypt any unlocked notes and strip plaintext bodies.
+  async function reEncryptAll() {
+    if (!sessionEncKey) return;
+    for (var i = 0; i < state.notes.length; i++) {
+      var n = state.notes[i];
+      if (n.encrypted && n.body) {
+        try { n.encBody = await aesEncrypt(sessionEncKey, n.body); } catch(e) {}
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Sidebar / notes
   // ---------------------------------------------------------------------------
+  function getManualOrder() {
+    var existing = state.noteOrder || [];
+    var liveIds = state.notes.filter(function(n){ return !n.deleted && !n.isTemplate; }).map(function(n){ return n.id; });
+    var result = existing.filter(function(id){ return liveIds.indexOf(id) !== -1; });
+    liveIds.forEach(function(id){ if (result.indexOf(id) === -1) result.push(id); });
+    return result;
+  }
   function sortedNotes(notes) {
     var s = notes.slice();
     if (sortBy === "alpha") s.sort(function (a, b) { return titleOf(a).localeCompare(titleOf(b)); });
     else if (sortBy === "created") s.sort(function (a, b) { return (a.createdAt || 0) - (b.createdAt || 0); });
+    else if (sortBy === "manual") {
+      var order = getManualOrder();
+      var orderMap = {};
+      order.forEach(function(id, i) { orderMap[id] = i; });
+      s.sort(function (a, b) {
+        var ai = orderMap[a.id] != null ? orderMap[a.id] : 999999;
+        var bi = orderMap[b.id] != null ? orderMap[b.id] : 999999;
+        return ai - bi;
+      });
+    }
     else s.sort(function (a, b) { return b.updatedAt - a.updatedAt; });
     // pinned notes always float to the top regardless of sort order
     s.sort(function (a, b) { return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0); });
     return s;
   }
+  // ---------------------------------------------------------------------------
+  // Drag-to-reorder (active when sortBy === "manual")
+  // ---------------------------------------------------------------------------
+  var dragSrcId = null;
+  function noteDragStart(e, id) {
+    dragSrcId = id;
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", id);
+    var el = noteList.querySelector('.note-item[data-id="' + id + '"]');
+    if (el) el.classList.add("dragging");
+  }
+  function noteDragOver(e, id) {
+    if (!dragSrcId || dragSrcId === id) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    noteList.querySelectorAll(".note-item").forEach(function(el) {
+      el.classList.remove("drag-over-top", "drag-over-bot");
+    });
+    var el = noteList.querySelector('.note-item[data-id="' + id + '"]');
+    if (!el) return;
+    var rect = el.getBoundingClientRect();
+    var mid = rect.top + rect.height / 2;
+    el.classList.add(e.clientY < mid ? "drag-over-top" : "drag-over-bot");
+  }
+  function noteDragDrop(e, targetId) {
+    e.preventDefault();
+    if (!dragSrcId || dragSrcId === targetId) { cleanDrag(); return; }
+    var el = noteList.querySelector('.note-item[data-id="' + targetId + '"]');
+    var before = el && el.classList.contains("drag-over-top");
+    var order = getManualOrder();
+    var si = order.indexOf(dragSrcId), ti = order.indexOf(targetId);
+    if (si === -1 || ti === -1) { cleanDrag(); return; }
+    order.splice(si, 1);
+    var newTi = order.indexOf(targetId);
+    order.splice(before ? newTi : newTi + 1, 0, dragSrcId);
+    state.noteOrder = order;
+    cleanDrag();
+    scheduleSave(); renderList();
+  }
+  function cleanDrag() {
+    dragSrcId = null;
+    noteList.querySelectorAll(".note-item").forEach(function(el) {
+      el.classList.remove("drag-over-top", "drag-over-bot", "dragging");
+    });
+  }
+
   function togglePin() {
     var nt = active(); if (!nt) return;
     nt.pinned = !nt.pinned;
@@ -2824,7 +3252,7 @@
   }
   function allTags() {
     var seen = {}, out = [];
-    state.notes.filter(function (n) { return !n.deleted; }).forEach(function (n) {
+    state.notes.filter(function (n) { return !n.deleted && !n.isTemplate; }).forEach(function (n) {
       tagsOf(n).forEach(function (t) { if (!seen[t]) { seen[t] = true; out.push(t); } });
     });
     return out.sort();
@@ -2847,7 +3275,8 @@
     });
   }
   function cycleSortBy() {
-    sortBy = sortBy === "modified" ? "alpha" : sortBy === "alpha" ? "created" : "modified";
+    sortBy = sortBy === "modified" ? "alpha" : sortBy === "alpha" ? "created" : sortBy === "created" ? "manual" : "modified";
+    if (sortBy === "manual") state.noteOrder = getManualOrder(); // capture current order as starting point
     state.sortBy = sortBy;
     scheduleSave();
     updateSortLabel();
@@ -2856,7 +3285,8 @@
   }
   function updateSortLabel() {
     var lbl = document.getElementById("sortLbl");
-    if (lbl) lbl.textContent = sortBy === "alpha" ? "A–Z" : sortBy === "created" ? "oldest first" : "recent first";
+    var labels = { alpha: "A–Z", created: "oldest first", manual: "drag to reorder", modified: "recent first" };
+    if (lbl) lbl.textContent = labels[sortBy] || "recent first";
   }
   function sectionCollapsed(label) {
     return !!(state.collapsed && state.collapsed[label]);
@@ -2892,6 +3322,19 @@
     el.dataset.id = nt.id;
     el.innerHTML = '<div class="ni-title"></div><div class="ni-meta"></div>';
     var titleEl = el.querySelector(".ni-title");
+
+    // Drag handle (shown in manual sort mode)
+    if (sortBy === "manual" && kind !== "trash") {
+      var dh = document.createElement("span");
+      dh.className = "drag-handle"; dh.textContent = "⠿"; dh.title = "Drag to reorder";
+      el.appendChild(dh);
+      el.draggable = true;
+      el.addEventListener("dragstart", function(e) { noteDragStart(e, nt.id); });
+      el.addEventListener("dragover",  function(e) { noteDragOver(e,  nt.id); });
+      el.addEventListener("drop",      function(e) { noteDragDrop(e,  nt.id); });
+      el.addEventListener("dragend",   cleanDrag);
+    }
+
     if (kind === "mail") {
       if (nt.unread) {
         var dot = document.createElement("span");
@@ -2907,6 +3350,16 @@
       var pin = document.createElement("span");
       pin.className = "ni-pin"; pin.textContent = "⚑";
       titleEl.appendChild(pin);
+    }
+    if (nt.isTemplate) {
+      var tmplIc = document.createElement("span");
+      tmplIc.className = "ni-tmpl"; tmplIc.textContent = "⊞"; tmplIc.title = "Template";
+      titleEl.appendChild(tmplIc);
+    }
+    if (nt.encrypted) {
+      var encIc = document.createElement("span");
+      encIc.className = "ni-enc"; encIc.textContent = "🔒"; encIc.title = nt.body ? "Encrypted (unlocked)" : "Encrypted";
+      titleEl.appendChild(encIc);
     }
     var meta;
     if (kind === "trash") {
@@ -2941,20 +3394,22 @@
     return el;
   }
   function renderList() {
+    noteList.classList.toggle("sort-manual", sortBy === "manual");
     var q = filterInput.value.trim().toLowerCase();
     function matches(nt) {
       return (!q || (nt.body || "").toLowerCase().indexOf(q) !== -1)
         && (!activeTag || tagsOf(nt).indexOf(activeTag) !== -1);
     }
-    var sorted  = sortedNotes(state.notes).filter(matches);
-    var regular = sorted.filter(function (nt) { return !nt.deleted && !nt.mailId; });
-    var mail    = sorted.filter(function (nt) { return !nt.deleted && nt.mailId; });
+    var sorted    = sortedNotes(state.notes).filter(matches);
+    var regular   = sorted.filter(function (nt) { return !nt.deleted && !nt.mailId && !nt.isTemplate; });
+    var mail      = sorted.filter(function (nt) { return !nt.deleted && nt.mailId; });
+    var templates = state.notes.filter(function (nt) { return nt.isTemplate && !nt.deleted; }).filter(matches);
     var trash   = state.notes.filter(function (nt) { return nt.deleted; }).filter(matches)
       .sort(function (a, b) { return (b.deletedAt || 0) - (a.deletedAt || 0); });
 
     noteList.innerHTML = "";
 
-    if (!regular.length && !mail.length && !trash.length) {
+    if (!regular.length && !mail.length && !trash.length && !templates.length) {
       var d = document.createElement("div");
       d.className = "empty-list";
       d.innerHTML = (q || activeTag) ? "No notes match." : "No notes yet.<br/>Create your first one below.";
@@ -2962,12 +3417,19 @@
       return;
     }
 
-    var sectioned = mail.length > 0 || trash.length > 0;
+    var sectioned = mail.length > 0 || trash.length > 0 || templates.length > 0;
     if (sectioned) {
       noteList.appendChild(sectionHeadEl("Notes", regular.length));
       if (!sectionCollapsed("Notes")) regular.forEach(function (nt) { noteList.appendChild(noteItemEl(nt, "note")); });
     } else {
       regular.forEach(function (nt) { noteList.appendChild(noteItemEl(nt, "note")); });
+    }
+
+    if (templates.length) {
+      noteList.appendChild(sectionHeadEl("Templates", templates.length, {
+        action: { icon: "+", title: "Create note from template", fn: openTemplatePalette }
+      }));
+      if (!sectionCollapsed("Templates")) templates.forEach(function (nt) { noteList.appendChild(noteItemEl(nt, "note")); });
     }
 
     if (mail.length) {
@@ -3027,7 +3489,10 @@
   }
 
   function openNote(id, fromJump) {
+    // Snapshot the outgoing note before switching
     if (!fromJump && state.activeId && state.activeId !== id) {
+      var outgoing = active();
+      if (outgoing) takeSnapshot(outgoing);
       jumpBack.push(state.activeId);
       if (jumpBack.length > 100) jumpBack.shift();
       jumpFwd.length = 0;
@@ -3035,7 +3500,8 @@
     state.activeId = id;
     var nt = active();
     if (nt && nt.unread) delete nt.unread;   // opening a fetched email marks it read
-    ta.value = nt ? nt.body : "";
+    // Locked encrypted notes show an empty editor (hint text appears automatically).
+    ta.value = (nt && nt.encrypted && !nt.body) ? "" : (nt ? nt.body : "");
     cur = 0;
     undoStack.length = 0; redoStack.length = 0;
     enterNormal(false);
@@ -3753,6 +4219,7 @@
     ]],
     ["Sidebar", [
       ["Notes", "your regular notes"],
+      ["Templates", "⊞ — notes marked :savetemplate; click + to use one"],
       ["Email", "messages imported with :fetch — ● marks unread"],
       ["Trash", "deleted notes — auto-clears after 30 days"],
       ["click heading", "collapse / expand a section"],
@@ -3760,6 +4227,7 @@
       ["↩ hover", "reply to a fetched email"],
       ["↺ hover", "restore a trashed note"],
       ["✕ hover", "delete a trashed note forever"],
+      ["sort → drag", "cycle sort to 'drag' to manually reorder notes"],
     ]],
     ["Linking notes", [
       ["[[", "pop up the note picker"],
@@ -3809,7 +4277,11 @@
       [":focus", "toggle distraction-free mode"],
       [":s/old/new/", "find & replace (once)"],
       [":s/old/new/g", "find & replace (all)"],
-      [":sort", "cycle sort order"],
+      [":sort", "cycle sort order (modified → A–Z → oldest → drag)"],
+      [":history", "browse and restore past versions of this note"],
+      [":savetemplate", "mark this note as a template"],
+      [":template", "create a new note from a template"],
+      [":encrypt", "encrypt / unlock the active note (AES-256)"],
       [":wrap", "toggle line wrap"],
       [":numbers", "toggle line numbers"],
       [":rnu", "toggle relative line numbers"],
@@ -3851,10 +4323,21 @@
   document.addEventListener("keydown", function (e) {
     // Email dialogs: while open, keep their inputs working and let Esc close
     // them — don't let editor shortcuts (?, Ctrl-F, …) fire underneath.
-    var cs = $("composeScrim"), ss = $("smtpScrim");
+    var cs = $("composeScrim"), ss = $("smtpScrim"), es = $("encScrim");
+    if (es.classList.contains("show")) {
+      if (e.key === "Escape") { e.preventDefault(); closeEncryptDialog(); }
+      return;
+    }
     if (cs.classList.contains("show") || ss.classList.contains("show")) {
       if (e.key === "Escape") { e.preventDefault(); if (cs.classList.contains("show")) closeCompose(); else closeSmtp(); }
       return;
+    }
+    // History / template palette escape
+    if ($("histPalette").classList.contains("show")) {
+      if (e.key === "Escape") { e.preventDefault(); closeHistPalette(); return; }
+    }
+    if ($("tmplPalette").classList.contains("show")) {
+      if (e.key === "Escape") { e.preventDefault(); closeTmplPalette(); return; }
     }
     var tm = document.getElementById("themeMenu");
     if (tm && tm.classList.contains("show") && e.key === "Escape") { e.preventDefault(); closeThemeMenu(); ta.focus(); return; }
@@ -4017,6 +4500,25 @@
       }, 1400);
     });
   });
+  // ---- History palette wiring ----
+  $("histCatch").addEventListener("click", closeHistPalette);
+  $("histPalette").addEventListener("keydown", function(e) {
+    if (e.key === "Escape") { e.preventDefault(); closeHistPalette(); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); histSel = Math.min(histItems.length-1, histSel+1); paintHistList(); }
+    else if (e.key === "ArrowUp")   { e.preventDefault(); histSel = Math.max(0, histSel-1); paintHistList(); }
+    else if (e.key === "Enter")     { e.preventDefault(); restoreHistSnap(histSel); }
+  });
+
+  // ---- Template palette wiring ----
+  $("tmplCatch").addEventListener("click", closeTmplPalette);
+
+  // ---- Encrypt dialog wiring ----
+  $("encX").addEventListener("click", closeEncryptDialog);
+  $("encCancel").addEventListener("click", closeEncryptDialog);
+  $("encConfirm").addEventListener("click", confirmEncrypt);
+  $("encScrim").addEventListener("click", function(e) { if (e.target === this) closeEncryptDialog(); });
+  $("encPass").addEventListener("keydown", function(e) { if (e.key === "Enter") { e.preventDefault(); confirmEncrypt(); } });
+
   $("prevBtn").addEventListener("click", toggleAutoPreview);
   preview.addEventListener("dblclick", function (e) {
     if (e.target.closest && e.target.closest("button.code-copy")) return;
@@ -4089,6 +4591,7 @@
     autoPreview = !(saved && saved.autoPreview === false);
     $("prevBtn").classList.toggle("on", autoPreview);
     sortBy = (saved && saved.sortBy) || "modified";
+    if (sortBy === "manual" && saved && saved.noteOrder) state.noteOrder = saved.noteOrder;
     updateSortLabel();
     relativeNumbers = !!(saved && saved.relativeNumbers);
     if (relativeNumbers) lastGutterText = null;
