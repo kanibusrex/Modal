@@ -56,42 +56,211 @@
   .app {
     height: 100vh;
     display: grid;
-    grid-template-columns: 268px 1fr;
-    grid-template-rows: 50px 1fr 34px;
+    grid-template-columns: 44px 268px 1fr;
+    grid-template-rows: 38px 1fr 34px;
     grid-template-areas:
-      "top    top"
-      "side   main"
-      "status status";
+      "navrail top    top"
+      "navrail side   main"
+      "navrail status status";
+    /* Frameless window (see main.js) is a plain rectangle underneath — round
+       all four outer corners so the window itself reads as rounded. */
+    border-radius: 10px;
+    overflow: hidden;
   }
+
+  /* ---------- nav rail — app glyph + vertical shimmering title ---------- */
+  .navrail {
+    grid-area: navrail;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 0;
+    background: linear-gradient(180deg,
+      color-mix(in srgb, var(--accent) 18%, var(--bg-deep)),
+      var(--bg-deep) 60%);
+    box-shadow: 2px 0 22px -12px rgba(0,0,0,.55);
+    z-index: 20;
+    /* macOS hides the native title bar (see main.js), so this is the only
+       strip left to drag the window from; buttons opt back out below. */
+    -webkit-app-region: drag;
+  }
+  .navrail button { -webkit-app-region: no-drag; }
+
+  /* Custom window controls — the window is fully frameless on every platform
+     (see main.js), so these replace the OS's own minimize/maximize/close
+     entirely rather than sitting alongside them. Drawn once, the same way,
+     regardless of platform, instead of native chrome that looks different
+     on every OS. */
+  .win-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .win-dot {
+    -webkit-app-region: no-drag;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    position: relative;
+    display: block;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,.18), 0 1px 1px rgba(255,255,255,.12);
+    transition: filter .1s;
+  }
+  .win-dot:hover { filter: brightness(1.15); }
+  .win-dot:active { filter: brightness(.85); }
+  .win-dot::before {
+    content: "";
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 8px; line-height: 1; font-weight: 700;
+    color: rgba(0,0,0,.55);
+    opacity: 0;
+    transition: opacity .1s;
+  }
+  .win-controls:hover .win-dot::before { opacity: 1; }
+  .win-close { background: #ec6a5f; }
+  .win-close::before { content: "×"; }
+  .win-min { background: #f4bf50; }
+  .win-min::before { content: "−"; }
+  .win-max { background: #62c454; }
+  .win-max::before { content: "+"; }
+  .win-maximized .win-max::before { content: "⤡"; }
+  .navrail-glyph {
+    width: 26px; height: 26px; border-radius: 7px;
+    box-shadow: 0 0 0 1px rgba(255,255,255,.07) inset, 0 2px 8px rgba(0,0,0,.3);
+    display: block;
+    flex: none;
+  }
+  .navrail-namewrap {
+    /* Grows to fill the space between the glyph and the icon-button group
+       below, centering the title in the middle of the rail. */
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+    width: 100%;
+    overflow: hidden;
+  }
+  .navrail-name {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    font-family: "Hoefler Text", "Baskerville", "Palatino Linotype", Palatino,
+      "Iowan Old Style", "Cormorant Garamond", Garamond, "Times New Roman", serif;
+    font-weight: 400;
+    font-variant: small-caps;
+    font-size: clamp(15px, 3vh, 27px);
+    letter-spacing: clamp(1.5px, 0.5vh, 5px);
+    white-space: nowrap;
+    user-select: none;
+    /* Two stacked backgrounds clipped to the text: a travelling highlight
+       band over a static base gradient tinted with the current theme. */
+    background: linear-gradient(
+        180deg,
+        transparent 30%,
+        rgba(255, 255, 255, 0.55) 44%,
+        #ffffff 50%,
+        rgba(255, 246, 224, 0.85) 55%,
+        transparent 70%
+      ),
+      linear-gradient(180deg, var(--fg-dim) 0%, var(--fg) 45%, var(--accent) 125%);
+    background-size: 100% 45%, 100% 100%;
+    background-position: 0 -120%, 0 0;
+    background-repeat: no-repeat;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 2px 6px rgba(0,0,0,.45));
+    animation: navrailShimmer 9s ease-in-out infinite;
+  }
+  @keyframes navrailShimmer {
+    0%, 12% { background-position: 0 -120%, 0 0; }
+    78%, 100% { background-position: 0 260%, 0 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .navrail-name { animation: none; }
+  }
+  @media (max-height: 460px) {
+    .navrail-namewrap { display: none; }
+  }
+
+  /* ---------- nav rail — icon-button group (pinned to the bottom by the
+     namewrap's flex:1 above soaking up the rest of the height) ---------- */
+  .navrail-group {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .navrail-btn {
+    -webkit-app-region: no-drag;
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--fg-dim);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .12s, color .12s;
+  }
+  .navrail-btn svg { width: 16px; height: 16px; flex: none; }
+  .navrail-btn:hover { background: rgba(255,255,255,.08); color: var(--fg); }
+  .navrail-btn.on { background: var(--accent-dim); color: var(--accent); }
+  .navrail-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
   /* ---------- top bar ---------- */
   .top {
     grid-area: top;
+    position: relative;
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 0 16px 0 18px;
+    gap: 8px;
+    padding: 0 14px;
+    min-width: 0;
     /* accent wash fading rightward — meets the sidebar's at the corner */
     background: linear-gradient(90deg,
       color-mix(in srgb, var(--accent) 16%, var(--bg-deep)),
       var(--bg-deep) 78%);
+    /* With the window fully frameless (see main.js), this bar is also a drag
+       handle — buttons/inputs opt back out below. */
+    -webkit-app-region: drag;
   }
-  .brand {
-    display: flex; align-items: center; gap: 10px;
-    font-weight: 600; letter-spacing: .16em; text-transform: uppercase;
-    font-size: 12px;
-    background: linear-gradient(90deg, var(--fg) 30%, var(--accent));
-    -webkit-background-clip: text; background-clip: text;
-    color: transparent;
-    user-select: none;
-    margin-right: 8px;
-  }
-  .brand .glyph {
-    width: 20px; height: 20px; border-radius: 6px;
-    box-shadow: 0 0 0 1px rgba(255,255,255,.07) inset, 0 2px 8px rgba(0,0,0,.3);
-    display: block;
+  .top button, .top input, .top .save-dot {
+    -webkit-app-region: no-drag;
   }
   .top .spacer { flex: 1; }
+  .top-title {
+    font-family: var(--ui);
+    font-size: 12.5px; font-weight: 600;
+    color: var(--fg);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    min-width: 0;
+  }
+  .top-meta {
+    font-family: var(--ui);
+    font-size: 11px; color: var(--fg-faint);
+    white-space: nowrap;
+    flex: none;
+  }
+  .top-clock {
+    position: absolute;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    font-family: var(--ui);
+    font-size: 12px; font-weight: 600;
+    color: var(--fg-dim);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .01em;
+    white-space: nowrap;
+    pointer-events: none;
+    user-select: none;
+  }
   .tbtn {
     font-family: var(--ui);
     font-size: 12.5px; font-weight: 500;
@@ -106,8 +275,6 @@
   }
   .tbtn:hover { color: var(--fg); background: var(--hover); }
   .tbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-  .tbtn.on { color: var(--accent); background: var(--accent-dim); }
-  .tbtn kbd { font-size: 10px; color: var(--fg-faint); }
   .save-dot {
     font-family: var(--ui);
     font-size: 11.5px; color: var(--fg-faint); min-width: 58px; text-align: right;
@@ -119,6 +286,7 @@
   /* ---------- sidebar ---------- */
   .side {
     grid-area: side;
+    position: relative;
     /* accent wash fading downward — continues the top bar's at the corner */
     background: linear-gradient(180deg,
       color-mix(in srgb, var(--accent) 16%, var(--bg-deep)),
@@ -126,6 +294,30 @@
     display: flex; flex-direction: column;
     min-height: 0;
     font-family: var(--ui);
+  }
+  /* Concave corners facing the reading pane's gap — instead of the sidebar's
+     own corner receding (a normal convex round, curving away from the gap),
+     these bulge the sidebar's fill outward past its old square corner and
+     curve back, so the transition sweeps toward the gap instead of away
+     from it. Each is a small box straddling the old corner point: within
+     14px of the box's far corner it's transparent (the real background
+     underneath shows through, so colors always match exactly); everywhere
+     else it's filled with the sidebar's own color at that edge. */
+  .side::before, .side::after {
+    content: "";
+    position: absolute;
+    right: -14px;
+    width: 14px; height: 14px;
+    pointer-events: none;
+  }
+  .side::before {
+    top: 0;
+    background: radial-gradient(circle at 100% 100%,
+      transparent 14px, color-mix(in srgb, var(--accent) 16%, var(--bg-deep)) 14px);
+  }
+  .side::after {
+    bottom: 0;
+    background: radial-gradient(circle at 100% 0%, transparent 14px, var(--bg-deep) 14px);
   }
   .side-search {
     padding: 2px 12px 8px;
@@ -204,7 +396,6 @@
     letter-spacing: -.005em;
   }
   .note-item.active .ni-title { color: var(--fg); font-weight: 600; }
-  .note-item .ni-mail-ic { color: var(--fg-faint); margin-right: 5px; font-size: 11px; }
   .note-item .ni-meta {
     font-size: 11px; color: var(--fg-faint); margin-top: 3px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -259,7 +450,10 @@
     background: var(--bg);
     min-height: 0;
     display: flex;
-    margin: 2px 10px 10px 2px;
+    /* Uniform on all sides — asymmetric margins (it used to be 2px on top/
+       left, 10px on bottom/right) left no room for the radius to read as
+       rounded on three of the four corners. */
+    margin: 10px;
     border-radius: var(--r-lg);
     border: 1px solid var(--line-soft);
     box-shadow: 0 1px 3px rgba(0,0,0,.12), 0 12px 40px rgba(0,0,0,.16);
@@ -306,6 +500,10 @@
     background: var(--bg);
   }
   .preview-on #preview { display: block; }
+  /* split view — editor and preview shown side by side instead of swapping */
+  .split-on #editor { right: 50%; }
+  .split-on #preview { left: 50%; border-left: 1px solid var(--line-soft); }
+  .split-on.with-numbers .gutter { display: block; }
   #preview h1, #preview h2, #preview h3 { line-height: 1.3; margin: 1.1em 0 .5em; font-weight: 650; letter-spacing: -.015em; }
   #preview h1 { font-size: 1.7em; border-bottom: 1px solid var(--line-soft); padding-bottom: .25em; }
   #preview h2 { font-size: 1.35em; }
@@ -534,8 +732,6 @@
   .save-dot.reconnect { color: var(--m-command); cursor: pointer; font-weight: 600; }
   .save-dot.reconnect:hover { color: var(--fg); }
 
-  /* ---------- email dialogs ---------- */
-  .email-sheet { width: min(540px, 100%); }
   .ef { display: flex; flex-direction: column; gap: 13px; margin-top: 18px; }
   .ef-row { display: flex; flex-direction: column; gap: 6px; }
   .ef-row > span { font-size: 10.5px; text-transform: uppercase; letter-spacing: .12em; color: var(--fg-faint); font-weight: 600; }
@@ -627,7 +823,7 @@
     pointer-events: none;
   }
   .with-numbers .gutter { display: block; }
-  .preview-on .gutter { display: none; }
+  .preview-on:not(.split-on) .gutter { display: none; }
   .gutter-inner { position: absolute; top: 0; left: 0; right: 0; will-change: transform; }
   .lnum {
     position: absolute; right: 12px;
@@ -735,6 +931,7 @@
 
   /* ---------- focus mode ---------- */
   .focus-mode .top { display: none; }
+  .focus-mode .navrail { display: none; }
   .focus-mode .side { display: none; }
   .focus-mode .status { display: none; }
   .focus-mode .app {
@@ -793,42 +990,63 @@
 
   @media (max-width: 720px) {
     .app { grid-template-columns: 1fr; grid-template-areas: "top" "main" "status"; }
-    .main { margin: 2px 8px 8px; }
+    .navrail { display: none; }
+    .main { margin: 8px; }
     .side { display: none; }
     .side.open {
-      display: flex; position: absolute; z-index: 30; top: 50px; bottom: 34px; left: 0; width: 284px;
+      display: flex; position: absolute; z-index: 30; top: 38px; bottom: 34px; left: 0; width: 284px;
       background: color-mix(in srgb, var(--bg-deep) 92%, transparent);
       backdrop-filter: blur(14px);
       border-right: 1px solid var(--line-soft);
       box-shadow: var(--shadow-2);
     }
     .status .tip { display: none; }
+    /* Two narrow columns don't work — stack editor above preview instead. */
+    .split-on #editor { top: 0; bottom: 50%; right: 0; }
+    .split-on #preview { top: 50%; left: 0; right: 0; border-left: none; border-top: 1px solid var(--line-soft); }
+    .split-on.with-numbers .gutter { bottom: 50%; }
   }
 </style>
 
 <div class="app" id="app">
-  <div class="top">
-    <div class="brand">
-      <svg class="glyph" viewBox="0 0 512 512" aria-hidden="true">
-        <defs>
-          <linearGradient id="brandBg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1d2029"/><stop offset="1" stop-color="#0b0d11"/></linearGradient>
-          <linearGradient id="brandCur" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5fb8c9"/><stop offset="1" stop-color="#c39be6"/></linearGradient>
-        </defs>
-        <rect width="512" height="512" rx="116" fill="url(#brandBg)"/>
-        <g fill="#e3c188"><rect x="156" y="196" width="44" height="44" rx="13"/><rect x="156" y="272" width="44" height="44" rx="13"/></g>
-        <rect x="236" y="184" width="68" height="144" rx="17" fill="url(#brandCur)"/>
-      </svg>
-      modal
+  <nav class="navrail">
+    <svg class="navrail-glyph" viewBox="0 0 512 512" aria-hidden="true">
+      <defs>
+        <linearGradient id="brandBg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1d2029"/><stop offset="1" stop-color="#0b0d11"/></linearGradient>
+        <linearGradient id="brandCur" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5fb8c9"/><stop offset="1" stop-color="#c39be6"/></linearGradient>
+      </defs>
+      <rect width="512" height="512" rx="116" fill="url(#brandBg)"/>
+      <g fill="#e3c188"><rect x="156" y="196" width="44" height="44" rx="13"/><rect x="156" y="272" width="44" height="44" rx="13"/></g>
+      <rect x="236" y="184" width="68" height="144" rx="17" fill="url(#brandCur)"/>
+    </svg>
+    <div class="win-controls" id="winControls">
+      <button class="win-dot win-close" id="winCloseBtn" title="Close" aria-label="Close"></button>
+      <button class="win-dot win-min" id="winMinBtn" title="Minimize" aria-label="Minimize"></button>
+      <button class="win-dot win-max" id="winMaxBtn" title="Maximize" aria-label="Maximize"></button>
     </div>
+    <div class="navrail-namewrap"><span class="navrail-name">modal</span></div>
+    <div class="navrail-group">
+      <button class="navrail-btn" id="fileBtn" title="Save / load a .json file" aria-label="File">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+      </button>
+      <button class="navrail-btn" id="themeBtn" title="Color scheme" aria-label="Theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/></svg>
+      </button>
+      <button class="navrail-btn" id="viewBtn" title="View options" aria-label="View">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+      <button class="navrail-btn" id="helpBtn" title="Help" aria-label="Help">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 1 1 5.82 1c0 2-2.92 2.5-2.92 4.5"/><path d="M12 17.5h.01"/></svg>
+      </button>
+    </div>
+  </nav>
+  <div class="top">
     <button class="tbtn" id="menuBtn" title="Notes" style="display:none">☰</button>
+    <div class="top-title" id="topTitle">Untitled</div>
+    <span class="top-clock" id="topClock"></span>
     <div class="spacer"></div>
+    <span class="top-meta" id="topMeta"></span>
     <span class="save-dot" id="saveDot">saved</span>
-    <button class="tbtn" id="fileBtn" title="Save / load a .json file">file</button>
-    <button class="tbtn" id="themeBtn" title="Color scheme">theme</button>
-    <button class="tbtn" id="numBtn" title="Toggle line numbers">lines</button>
-    <button class="tbtn" id="wrapBtn" title="Toggle line wrap">wrap</button>
-    <button class="tbtn" id="prevBtn" title="Show rendered preview when not editing">preview</button>
-    <button class="tbtn" id="helpBtn">help <kbd>?</kbd></button>
   </div>
 
   <aside class="side" id="side">
@@ -902,56 +1120,6 @@
   <div class="palette-head" id="paletteHead">Link to a note</div>
   <input id="linkSearch" type="text" spellcheck="false" autocomplete="off" placeholder="Search notes, or type a new title…" />
   <div class="palette-list" id="linkList"></div>
-</div>
-
-<div class="scrim" id="composeScrim">
-  <div class="sheet email-sheet" role="dialog" aria-label="Email this note">
-    <div class="sheet-head">
-      <h2>Email this note</h2>
-      <p id="composeFrom"></p>
-      <button class="x" id="composeX">close · Esc</button>
-    </div>
-    <div class="ef">
-      <label class="ef-row"><span>To</span><input id="composeTo" type="text" spellcheck="false" autocomplete="off" placeholder="recipient@example.com" /></label>
-      <label class="ef-row"><span>Subject</span><input id="composeSubject" type="text" spellcheck="false" autocomplete="off" /></label>
-      <div class="ef-note" id="composeNote"></div>
-      <div class="ef-actions">
-        <button class="ef-btn" id="composeSettings" type="button">Settings…</button>
-        <button class="ef-btn primary" id="composeSend" type="button">Send</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<div class="scrim" id="smtpScrim">
-  <div class="sheet email-sheet" role="dialog" aria-label="Email settings">
-    <div class="sheet-head">
-      <h2>Email settings</h2>
-      <p>SMTP — stored on this device only.</p>
-      <button class="x" id="smtpX">close · Esc</button>
-    </div>
-    <div class="ef">
-      <label class="ef-row"><span>SMTP host</span><input id="smtpHost" type="text" spellcheck="false" autocomplete="off" placeholder="smtp.gmail.com" /></label>
-      <div class="ef-row2">
-        <label class="ef-row"><span>Port</span><input id="smtpPort" type="number" placeholder="587" /></label>
-        <label class="ef-check"><input id="smtpSecure" type="checkbox" /><span>SSL (465)</span></label>
-      </div>
-      <label class="ef-row"><span>Username</span><input id="smtpUser" type="text" spellcheck="false" autocomplete="off" placeholder="you@gmail.com" /></label>
-      <label class="ef-row"><span>Password / app password</span><input id="smtpPass" type="password" autocomplete="off" placeholder="app password" /></label>
-      <label class="ef-row"><span>From address</span><input id="smtpFrom" type="text" spellcheck="false" autocomplete="off" placeholder="you@gmail.com" /></label>
-      <div class="ef-div">Receiving — IMAP (uses the same username &amp; password)</div>
-      <label class="ef-row"><span>IMAP host</span><input id="imapHost" type="text" spellcheck="false" autocomplete="off" placeholder="imap.gmail.com" /></label>
-      <div class="ef-row2">
-        <label class="ef-row"><span>IMAP port</span><input id="imapPort" type="number" placeholder="993" /></label>
-        <label class="ef-check"><input id="imapSecure" type="checkbox" /><span>SSL (993)</span></label>
-      </div>
-      <div class="ef-note" id="smtpNote"></div>
-      <div class="ef-actions">
-        <button class="ef-btn" id="smtpTest" type="button">Test connection</button>
-        <button class="ef-btn primary" id="smtpSave" type="button">Save</button>
-      </div>
-    </div>
-  </div>
 </div>
 
 <!-- Note history palette -->
@@ -1102,6 +1270,9 @@
   var modDot = $("modDot");
   var posEl = $("pos");
   var saveDot = $("saveDot");
+  var topTitle = $("topTitle");
+  var topMeta = $("topMeta");
+  var topClock = $("topClock");
   var hint = $("hint");
   var preview = $("preview");
   var cmdline = $("cmdline");
@@ -1241,16 +1412,72 @@
     document.body.appendChild(menu);
     return menu;
   }
+  // Opens to the right of a rail button, clamped to the viewport — the rail
+  // sits on the left edge, so anchoring below-right (as if from a top toolbar)
+  // would run the menu off the bottom of a short window.
+  function openMenuFromRailBtn(menu, btnId) {
+    menu.classList.add("show");
+    var r = document.getElementById(btnId).getBoundingClientRect();
+    var mh = menu.offsetHeight || 200;
+    menu.style.right = "auto";
+    menu.style.left = (r.right + 8) + "px";
+    menu.style.top = Math.max(10, Math.min(r.top, window.innerHeight - mh - 10)) + "px";
+  }
   function toggleThemeMenu() {
     var menu = document.getElementById("themeMenu") || buildThemeMenu();
     if (menu.classList.contains("show")) { closeThemeMenu(); return; }
-    var r = document.getElementById("themeBtn").getBoundingClientRect();
-    menu.style.top = (r.bottom + 6) + "px";
-    menu.style.right = (window.innerWidth - r.right) + "px";
-    menu.classList.add("show");
+    openMenuFromRailBtn(menu, "themeBtn");
   }
   function closeThemeMenu() {
     var menu = document.getElementById("themeMenu");
+    if (menu) menu.classList.remove("show");
+  }
+
+  // ---------------------------------------------------------------------------
+  // View menu — the line-numbers / wrap / auto-preview / split toggles that
+  // used to be their own top-bar buttons, gathered under one rail icon.
+  // ---------------------------------------------------------------------------
+  var VIEW_OPTS = [
+    { key: "numbers", label: "Line numbers", get: function () { return numbersOn; }, fn: toggleNumbers },
+    { key: "wrap", label: "Line wrap", get: function () { return !app.classList.contains("nowrap"); }, fn: toggleWrap },
+    { key: "preview", label: "Auto preview", get: function () { return autoPreview; }, fn: toggleAutoPreview },
+    { key: "split", label: "Split view", get: function () { return splitView; }, fn: toggleSplitView }
+  ];
+  function buildViewMenu() {
+    var menu = document.createElement("div");
+    menu.className = "theme-menu"; menu.id = "viewMenu";
+    var head = document.createElement("div"); head.className = "tm-head"; head.textContent = "View";
+    menu.appendChild(head);
+    VIEW_OPTS.forEach(function (o) {
+      var opt = document.createElement("div");
+      opt.className = "theme-opt"; opt.dataset.key = o.key;
+      var label = document.createElement("span"); label.textContent = o.label;
+      var chk = document.createElement("span"); chk.className = "chk"; chk.textContent = "✓";
+      opt.appendChild(label); opt.appendChild(chk);
+      // Toggling stays open — these aren't mutually exclusive, so closing on
+      // every click would make setting more than one of them tedious.
+      opt.addEventListener("click", function () { o.fn(); });
+      menu.appendChild(opt);
+    });
+    document.body.appendChild(menu);
+    return menu;
+  }
+  function refreshViewMenu() {
+    var menu = document.getElementById("viewMenu");
+    if (!menu) return;
+    VIEW_OPTS.forEach(function (o) {
+      var opt = menu.querySelector('.theme-opt[data-key="' + o.key + '"]');
+      if (opt) opt.classList.toggle("active", !!o.get());
+    });
+  }
+  function toggleViewMenu() {
+    var menu = document.getElementById("viewMenu") || buildViewMenu();
+    if (menu.classList.contains("show")) { closeViewMenu(); return; }
+    refreshViewMenu();
+    openMenuFromRailBtn(menu, "viewBtn");
+  }
+  function closeViewMenu() {
+    var menu = document.getElementById("viewMenu");
     if (menu) menu.classList.remove("show");
   }
 
@@ -1432,319 +1659,10 @@
     else toast("PDF failed: " + (res.error || "unknown error"));
   }
 
-  // ---------------------------------------------------------------------------
-  // Email — send a note via the user's SMTP account (nodemailer in main), or
-  // fall back to the OS mail client (mailto:) when SMTP isn't configured.
-  // ---------------------------------------------------------------------------
-  var composeNote = null;
-
-  function emailAvailable() {
-    return !!(window.mailer && typeof window.mailer.getConfig === "function");
-  }
-
-  // Pull a bare address out of a "Name <addr>" or plain-address string.
-  function extractEmail(s) {
-    s = String(s || "");
-    var m = s.match(/<([^>]+)>/);
-    if (m) return m[1].trim();
-    var m2 = s.match(/[^\s<>,]+@[^\s<>,]+/);
-    return m2 ? m2[0] : s.trim();
-  }
-  // Read back the From/To/Date headers and the message text from a note that was
-  // created by fetchEmail (mailToNoteBody wrote them as Markdown).
-  function parseMailNote(note) {
-    var body = note.body || "";
-    var from = "", to = "", date = "";
-    body.split("\n").forEach(function (l) {
-      var mf = l.match(/^\*\*From:\*\*\s*(.+)$/); if (mf && !from) from = mf[1].trim();
-      var mt = l.match(/^\*\*To:\*\*\s*(.+)$/);   if (mt && !to)   to   = mt[1].trim();
-      var md = l.match(/^\*\*Date:\*\*\s*(.+)$/); if (md && !date) date = md[1].trim();
-    });
-    var sep = body.indexOf("\n---\n");
-    var text = sep >= 0 ? body.slice(sep + 5) : "";
-    return { subject: titleOf(note), from: from, to: to, date: date, text: text.trim() };
-  }
-
-  // Draft a reply to a received-email note: a fresh note pre-filled with the
-  // recipient, a "Re:" subject line, and the original quoted below. Opens it in
-  // the editor so the reply is typed above the quote, then :email / ⤴ sends it.
-  function replyToNote(note) {
-    note = note || active();
-    if (!note) { toast("No message to reply to"); return; }
-    if (!note.mailId) { toast("Not a received email — reply only works on fetched messages"); return; }
-    var m = parseMailNote(note);
-    var addr = extractEmail(m.from);
-    if (!addr) { toast("Couldn't find a sender address to reply to"); return; }
-    var subject = /^\s*re:/i.test(m.subject) ? m.subject : "Re: " + m.subject;
-    var quoted = m.text ? m.text.split("\n").map(function (l) { return "> " + l; }).join("\n") : "> (no text content)";
-    var attribution = "On " + (m.date || "an earlier date") + ", " + (m.from || addr) + " wrote:";
-    var head = "# " + subject + "\n\n";
-    var body = head + "\n\n---\n" + attribution + "\n\n" + quoted + "\n";
-    var now = Date.now();
-    var nt = { id: uid(), body: body, updatedAt: now, createdAt: now, replyTo: addr, inReplyTo: note.mailId };
-    state.notes.push(nt);
-    openNote(nt.id);
-    renderList(); renderTagBar();
-    enterInsert(head.length);      // caret on the blank line under the subject
-    scheduleSave();
-    toast("Reply drafted — write your message, then :email to send");
-  }
-
-  async function emailNote(note) {
-    note = note || active();
-    if (!note) { toast("No note to email"); return; }
-    if (!emailAvailable()) {
-      // Older build with only the mailto bridge — degrade gracefully.
-      if (window.mailer && window.mailer.compose) {
-        window.mailer.compose(titleOf(note), (note.body || "").replace(/img:[A-Za-z0-9_-]+/g, "[image]"));
-      } else { toast("Email isn't available in this build"); }
-      return;
-    }
-    var cfg;
-    try { cfg = await window.mailer.getConfig(); } catch (e) { cfg = null; }
-    if (!cfg || !cfg.host) { openSmtpSettings({ reason: "Set up SMTP below to send mail straight from modal." }); return; }
-    openEmailCompose(note, cfg);
-  }
-
   function setEfNote(id, msg, cls) {
     var el = $(id); if (!el) return;
     el.textContent = msg || "";
     el.className = "ef-note" + (cls ? " " + cls : "");
-  }
-
-  function openEmailCompose(note, cfg) {
-    composeNote = note;
-    $("composeTo").value = note.replyTo || (cfg && cfg.lastTo) || "";
-    $("composeSubject").value = titleOf(note);
-    $("composeFrom").textContent = (cfg && (cfg.from || cfg.user)) ? "From " + (cfg.from || cfg.user) : "";
-    setEfNote("composeNote", "", "");
-    $("composeSend").disabled = false;
-    $("composeScrim").classList.add("show");
-    requestAnimationFrame(function () { requestAnimationFrame(function () { var t = $("composeTo"); t.focus(); if (t.value) t.select(); }); });
-  }
-  function closeCompose() { $("composeScrim").classList.remove("show"); ta.focus(); }
-
-  // Minimal CSS for the HTML email body — light theme, so it reads well in any
-  // mail client. Embedded in a <style> block (and image widths are capped
-  // inline-style-free since most clients honor a <style> in the body/head).
-  var EMAIL_CSS =
-    "body{margin:0;background:#ffffff;}" +
-    ".modal-mail{font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#1a1a1a;max-width:680px;margin:0 auto;padding:24px;}" +
-    ".modal-mail h1,.modal-mail h2,.modal-mail h3{line-height:1.25;margin:1.2em 0 .5em;}" +
-    ".modal-mail h1{font-size:1.6em;}.modal-mail h2{font-size:1.3em;}.modal-mail h3{font-size:1.1em;}" +
-    ".modal-mail p{margin:.6em 0;}" +
-    ".modal-mail img,.modal-mail .md-img{max-width:100%;height:auto;border-radius:6px;}" +
-    ".modal-mail pre{background:#f4f5f7;border:1px solid #e3e6ea;border-radius:8px;padding:12px 14px;overflow:auto;}" +
-    ".modal-mail code{font-family:SFMono-Regular,Consolas,Menlo,monospace;font-size:.9em;}" +
-    ".modal-mail :not(pre)>code{background:#f4f5f7;border-radius:4px;padding:1px 5px;}" +
-    ".modal-mail blockquote{margin:.8em 0;padding:.2em 1em;border-left:3px solid #d0d4da;color:#555;}" +
-    ".modal-mail table{border-collapse:collapse;width:100%;margin:.8em 0;}" +
-    ".modal-mail th,.modal-mail td{border:1px solid #e3e6ea;padding:6px 10px;text-align:left;}" +
-    ".modal-mail a,.modal-mail .ilink,.modal-mail .ilink-new{color:#2563eb;text-decoration:none;}" +
-    ".modal-mail hr{border:none;border-top:1px solid #e3e6ea;margin:1.4em 0;}" +
-    ".modal-mail ul,.modal-mail ol{padding-left:1.5em;}";
-
-  // Render the note to an HTML email + plain-text fallback + inline-image
-  // attachments, reusing the app's own Markdown renderer.
-  function buildNoteEmail(note) {
-    emailCidCollect = new Set();
-    var inner;
-    try { inner = renderMarkdown(note.body || ""); }
-    finally { /* ids collected; clear the flag below */ }
-    var ids = Array.from(emailCidCollect);
-    emailCidCollect = null;
-
-    // Strip interactive chrome that has no meaning in an email.
-    inner = inner
-      .replace(/<button class="code-copy"[\s\S]*?<\/button>/g, "")
-      .replace(/<input type="checkbox"([^>]*?)\/>/g, function (_, attrs) { return /checked/.test(attrs) ? "☑ " : "☐ "; });
-
-    var attachments = ids.map(function (id) {
-      var im = state.images[id];
-      if (!im) return null;
-      var ext = (im.type && im.type.split("/")[1]) || "png";
-      return { cid: id, filename: id + "." + ext, dataUri: im.data };
-    }).filter(Boolean);
-
-    var html = '<!doctype html><html><head><meta charset="utf-8"/><style>' + EMAIL_CSS +
-      '</style></head><body><div class="modal-mail">' + inner + "</div></body></html>";
-    var text = (note.body || "")
-      .replace(/!\[[^\]]*\]\(img:[^)]*\)/g, "[image]")
-      .replace(/img:[A-Za-z0-9_-]+/g, "[image]");
-    return { html: html, text: text, attachments: attachments };
-  }
-
-  async function sendComposed() {
-    if (!composeNote) return;
-    var to = $("composeTo").value.trim();
-    if (!to) { setEfNote("composeNote", "Enter a recipient address.", "err"); $("composeTo").focus(); return; }
-    var subject = $("composeSubject").value.trim() || titleOf(composeNote);
-    var built = buildNoteEmail(composeNote);
-    var btn = $("composeSend");
-    btn.disabled = true;
-    setEfNote("composeNote", "Sending…", "");
-    var res;
-    var payload = { to: to, subject: subject, html: built.html, text: built.text, attachments: built.attachments };
-    if (composeNote.inReplyTo) payload.inReplyTo = composeNote.inReplyTo;
-    try { res = await window.mailer.send(payload); }
-    catch (e) { res = { ok: false, error: String(e) }; }
-    btn.disabled = false;
-    if (res && res.ok) { closeCompose(); toast("Email sent to " + to); }
-    else { setEfNote("composeNote", "Couldn't send: " + ((res && res.error) || "unknown error"), "err"); }
-  }
-
-  // ---- SMTP settings ----
-  async function openSmtpSettings(opts) {
-    opts = opts || {};
-    if (!emailAvailable()) { toast("Email isn't available in this build"); return; }
-    var cfg;
-    try { cfg = await window.mailer.getConfig(); } catch (e) { cfg = {}; }
-    // First-run convenience: default to Gmail's SMTP and this user's address so
-    // only an app password is needed. Any saved config overrides these.
-    var GMAIL = { host: "smtp.gmail.com", port: 587, secure: false, user: "michael.alexander3@gmail.com", from: "michael.alexander3@gmail.com", imapHost: "imap.gmail.com", imapPort: 993, imapSecure: true };
-    var fresh = !cfg.host;
-    var d = fresh ? GMAIL : cfg;
-    $("smtpHost").value = d.host || "";
-    $("smtpPort").value = d.port || 587;
-    $("smtpSecure").checked = !!d.secure;
-    $("smtpUser").value = d.user || "";
-    $("smtpFrom").value = d.from || "";
-    $("imapHost").value = d.imapHost || (fresh ? "imap.gmail.com" : "");
-    $("imapPort").value = d.imapPort || 993;
-    $("imapSecure").checked = d.imapSecure !== false;
-    var pass = $("smtpPass");
-    pass.value = "";
-    pass.placeholder = cfg.hasPassword ? "•••• saved — leave blank to keep" : "Gmail app password (16 chars)";
-    var msg = opts.reason || "";
-    var cls = "";
-    if (fresh) { msg = (msg ? msg + " " : "") + "Gmail needs an app password (myaccount.google.com → Security → App passwords), not your normal login."; }
-    if (cfg.encryptionAvailable === false) { msg = (msg ? msg + " " : "") + "OS keychain unavailable — password will be stored unencrypted."; cls = "err"; }
-    setEfNote("smtpNote", msg, cls);
-    $("smtpScrim").classList.add("show");
-    // On a fresh Gmail prefill, the only thing missing is the password.
-    setTimeout(function () { (fresh ? $("smtpPass") : $("smtpHost")).focus(); }, 0);
-  }
-  function closeSmtp() { $("smtpScrim").classList.remove("show"); ta.focus(); }
-
-  function gatherSmtp() {
-    return {
-      host: $("smtpHost").value.trim(),
-      port: parseInt($("smtpPort").value, 10) || 587,
-      secure: $("smtpSecure").checked,
-      user: $("smtpUser").value.trim(),
-      from: $("smtpFrom").value.trim(),
-      password: $("smtpPass").value,
-      imapHost: $("imapHost").value.trim(),
-      imapPort: parseInt($("imapPort").value, 10) || 993,
-      imapSecure: $("imapSecure").checked,
-    };
-  }
-
-  async function saveSmtp() {
-    var cfg = gatherSmtp();
-    if (!cfg.host) { setEfNote("smtpNote", "Enter an SMTP host.", "err"); $("smtpHost").focus(); return null; }
-    var res;
-    try { res = await window.mailer.saveConfig(cfg); } catch (e) { res = { ok: false, error: String(e) }; }
-    if (res && res.ok) {
-      // Clear the password field but show it's retained.
-      $("smtpPass").value = "";
-      if (res.config && res.config.hasPassword) $("smtpPass").placeholder = "•••• saved — leave blank to keep";
-      setEfNote("smtpNote", "Saved.", "ok");
-      toast("Email settings saved");
-    } else {
-      setEfNote("smtpNote", "Couldn't save: " + ((res && res.error) || "unknown error"), "err");
-    }
-    return res;
-  }
-
-  async function testSmtp() {
-    // Persist current field values first so the test uses them.
-    var saved = await saveSmtp();
-    if (!saved || !saved.ok) return;
-    setEfNote("smtpNote", "Testing connection…", "");
-    var res;
-    try { res = await window.mailer.testConnection(); } catch (e) { res = { ok: false, error: String(e) }; }
-    if (res && res.ok) setEfNote("smtpNote", "Connection OK.", "ok");
-    else setEfNote("smtpNote", "Failed: " + ((res && res.error) || "unknown error"), "err");
-  }
-
-  // ---- Receiving: pull the latest inbox messages in as notes ----
-  var fetchingMail = false;
-
-  // Pull image attachments into the app's image store; return Markdown refs for
-  // them plus the names of any non-image (or skipped) attachments.
-  function importMailImages(m) {
-    var imageMd = [], otherNames = [];
-    (m.attachments || []).forEach(function (a) {
-      if (typeof a === "string") { otherNames.push(a); return; }   // older shape
-      if (a.dataUri) {
-        if (!state.images) state.images = {};
-        var id = uid();
-        state.images[id] = { data: a.dataUri, type: a.contentType || "image/png" };
-        imageMd.push("![" + (a.filename || "image") + "](img:" + id + ")");
-      } else {
-        otherNames.push((a.filename || "attachment") + (a.size ? " (" + Math.round(a.size / 1024) + " KB)" : ""));
-      }
-    });
-    return { imageMd: imageMd, otherNames: otherNames };
-  }
-
-  // Turn one parsed message into Markdown note text.
-  function mailToNoteBody(m, extra) {
-    extra = extra || { imageMd: [], otherNames: [] };
-    var lines = ["# " + (m.subject || "(no subject)"), ""];
-    if (m.from) lines.push("**From:** " + m.from);
-    if (m.to) lines.push("**To:** " + m.to);
-    if (m.date) { var d = new Date(m.date); lines.push("**Date:** " + (isNaN(d) ? m.date : d.toLocaleString())); }
-    if (extra.otherNames.length) lines.push("**Attachments:** " + extra.otherNames.join(", "));
-    lines.push("", "---", "");
-    lines.push((m.text || "").trim() || "_(no text content)_");
-    if (extra.imageMd.length) lines.push("", extra.imageMd.join("\n\n"));
-    return lines.join("\n");
-  }
-
-  async function fetchEmail() {
-    if (fetchingMail) return;
-    if (!(window.mailer && typeof window.mailer.fetchInbox === "function")) { toast("Receiving isn't available in this build"); return; }
-    var cfg;
-    try { cfg = await window.mailer.getConfig(); } catch (e) { cfg = null; }
-    // Need at least a username + password, and an IMAP host (or a Gmail SMTP host we can map).
-    if (!cfg || !cfg.hasPassword || !cfg.user || (!cfg.imapHost && cfg.host !== "smtp.gmail.com")) {
-      openSmtpSettings({ reason: "Set up your account (incl. IMAP) below to fetch mail." });
-      return;
-    }
-    fetchingMail = true;
-    toast("Fetching inbox…");
-    var res;
-    try { res = await window.mailer.fetchInbox({ limit: 25 }); }
-    catch (e) { res = { ok: false, error: String(e) }; }
-    fetchingMail = false;
-    if (!res || !res.ok) { toast("Fetch failed: " + ((res && res.error) || "unknown error")); return; }
-
-    var existing = {};
-    state.notes.forEach(function (n) { if (n.mailId) existing[n.mailId] = true; });
-    var added = 0, firstNewId = null, now = Date.now();
-    (res.messages || []).forEach(function (m) {
-      if (m.messageId && existing[m.messageId]) return;       // already imported
-      var ts = m.date ? +new Date(m.date) : now;
-      if (isNaN(ts)) ts = now;
-      var extra = importMailImages(m);
-      var nt = { id: uid(), body: mailToNoteBody(m, extra), updatedAt: ts, createdAt: ts, mailId: m.messageId || ("uid:" + m.uid), unread: true };
-      state.notes.push(nt);
-      existing[nt.mailId] = true;
-      if (!firstNewId) firstNewId = nt.id;
-      added++;
-    });
-
-    if (added) {
-      scheduleSave();
-      renderList();
-      renderTagBar();
-      if (firstNewId) openNote(firstNewId);
-      toast("Imported " + added + " new message" + (added === 1 ? "" : "s"));
-    } else {
-      toast("No new messages");
-    }
   }
 
   function importData(obj) {
@@ -2235,10 +2153,7 @@
     var menu = document.getElementById("fileMenu") || buildFileMenu();
     if (menu.classList.contains("show")) { closeFileMenu(); return; }
     renderFileMenu();
-    var r = document.getElementById("fileBtn").getBoundingClientRect();
-    menu.style.top = (r.bottom + 6) + "px";
-    menu.style.right = (window.innerWidth - r.right) + "px";
-    menu.classList.add("show");
+    openMenuFromRailBtn(menu, "fileBtn");
   }
   function closeFileMenu() { var m = document.getElementById("fileMenu"); if (m) m.classList.remove("show"); }
 
@@ -2277,6 +2192,15 @@
     modDot.textContent = "[+]";
     clearTimeout(saveTimer);
     saveTimer = setTimeout(commitSave, 450);
+  }
+  // Run a pending debounced save right now instead of waiting out the 450ms —
+  // used whenever the app might be about to disappear (tab hidden, window
+  // closing) so an edit can't be lost in the gap between typing and the timer.
+  function flushSave() {
+    if (!saveTimer) return Promise.resolve();
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    return commitSave();
   }
   async function commitSave() {
     takeSnapshot(active()); // archive a snapshot on every save (deduplicated by takeSnapshot)
@@ -2332,7 +2256,7 @@
     // insert mode: leave the native caret alone
 
     updateStatus();
-    hint.parentElement.classList.toggle("show-hint", ta.value.length === 0 && mode !== "insert" && !previewing);
+    hint.parentElement.classList.toggle("show-hint", ta.value.length === 0 && mode !== "insert" && (!previewing || splitView));
     updateGutter();
     scrollCursorIntoView();
     if (previewing && ta.value !== lastPreviewText) renderPreview();
@@ -2369,7 +2293,7 @@
     return { top: marker.offsetTop, left: marker.offsetLeft, lh: lh };
   }
   function scrollCursorIntoView() {
-    if (previewing) return;
+    if (previewing && !splitView) return;
     var c = caretXY();
     var padV = c.lh, padH = 28;
     if (c.top - padV < ta.scrollTop) ta.scrollTop = Math.max(0, c.top - padV);
@@ -2414,7 +2338,7 @@
     if (numbersOn) gutterInner.style.transform = "translateY(" + (-ta.scrollTop) + "px)";
   }
   function updateGutter() {
-    if (!numbersOn || previewing) return;
+    if (!numbersOn || (previewing && !splitView)) return;
     if (ta.value !== lastGutterText) { rebuildGutter(); lastGutterText = ta.value; }
     highlightCurrentLine();
     syncGutterScroll();
@@ -2426,7 +2350,7 @@
   function toggleNumbers() {
     numbersOn = !numbersOn;
     app.classList.toggle("with-numbers", numbersOn);
-    $("numBtn").classList.toggle("on", numbersOn);
+    refreshViewMenu();
     state.numbers = numbersOn;
     scheduleSave();
     lastGutterText = null;
@@ -2452,6 +2376,23 @@
     }
     var n = active();
     fileName.textContent = n ? titleOf(n).toLowerCase().replace(/\s+/g, "-").slice(0, 28) + ".md" : "untitled";
+    topTitle.textContent = n ? titleOf(n) : "No note selected";
+    topMeta.textContent = n ? ("edited " + relTime(n.updatedAt)) : "";
+  }
+
+  // Live clock, centered in the top bar — updated on the second so it never
+  // shows a stale minute, but cheap enough that a per-second tick is fine.
+  var WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  function updateClock() {
+    var d = new Date();
+    var h = d.getHours();
+    var ampm = h >= 12 ? "PM" : "AM";
+    h = h % 12; if (h === 0) h = 12;
+    var m = d.getMinutes();
+    var date = WEEKDAYS[d.getDay()] + ", " + MONTHS[d.getMonth()] + " " + d.getDate();
+    var time = h + ":" + (m < 10 ? "0" : "") + m + " " + ampm;
+    topClock.textContent = date + "  ·  " + time;
   }
 
   // ---------------------------------------------------------------------------
@@ -2582,7 +2523,7 @@
   // raw editor in Insert and Visual modes (where you need to see the text).
   var autoPreview = true;
   var lastPreviewText = null;
-  function effectivePreview() { return autoPreview && (mode === "normal" || mode === "command"); }
+  function effectivePreview() { return splitView || (autoPreview && (mode === "normal" || mode === "command")); }
   function syncView() {
     var show = effectivePreview();
     if (show !== previewing) {
@@ -2594,11 +2535,26 @@
   }
   function toggleAutoPreview() {
     autoPreview = !autoPreview;
-    $("prevBtn").classList.toggle("on", autoPreview);
+    refreshViewMenu();
     state.autoPreview = autoPreview;
     scheduleSave();
     syncView();
     render();
+    ta.focus();
+  }
+
+  // Split view — editor and preview shown side by side, updating live as you
+  // type instead of swapping based on mode.
+  var splitView = false;
+  function toggleSplitView() {
+    splitView = !splitView;
+    app.classList.toggle("split-on", splitView);
+    refreshViewMenu();
+    state.splitView = splitView;
+    scheduleSave();
+    syncView();
+    render();
+    refreshGutterLayout();
     ta.focus();
   }
   // While reading (preview shown), navigation keys scroll the rendered view.
@@ -2797,7 +2753,7 @@
   function handleCommandKey(e) {
     var k = e.key;
     if (e.metaKey) return;
-    if (e.ctrlKey && k !== "r" && k !== "d" && k !== "u" && k !== "o" && k !== "i" && !(previewing && mode === "normal" && (k === "f" || k === "b"))) return;
+    if (e.ctrlKey && k !== "r" && k !== "d" && k !== "u" && k !== "o" && k !== "i" && !(previewing && !splitView && mode === "normal" && (k === "f" || k === "b"))) return;
 
     // r<char> replace
     if (awaitChar === "r") {
@@ -2812,14 +2768,14 @@
     var n = Math.min(parseInt(count || "1", 10), 2000);
 
     // reading mode: Tab / Shift+Tab step between notes
-    if (previewing && mode === "normal" && k === "Tab") {
+    if (previewing && !splitView && mode === "normal" && k === "Tab") {
       e.preventDefault(); count = "";
       stepNote(e.shiftKey ? -1 : 1);
       return;
     }
 
     // reading mode: scroll the preview instead of moving the hidden cursor
-    if (previewing && mode === "normal" && previewScrollKey(e, k, n)) {
+    if (previewing && !splitView && mode === "normal" && previewScrollKey(e, k, n)) {
       e.preventDefault(); count = ""; return;
     }
 
@@ -2837,7 +2793,7 @@
     if (pending === "g") {
       e.preventDefault(); pending = "";
       if (k === "g") {
-        if (previewing && mode === "normal") preview.scrollTop = 0;
+        if (previewing && !splitView && mode === "normal") preview.scrollTop = 0;
         else { count ? gotoLine(n) : mTop(); render(); }
       }
       else if (k === "f") { followLinkUnderCursor(); }
@@ -2986,16 +2942,13 @@
     else if (c === "saveas" || c === "savemd" || c === "writemd" || c === "exportmd") { saveNoteAsMd(active()); }
     else if (c.indexOf("w ") === 0) { saveNoteAsMd(active(), c.slice(2).trim()); }
     else if (c.indexOf("saveas ") === 0) { saveNoteAsMd(active(), c.slice(7).trim()); }
-    else if (c === "mail" || c === "email" || c === "send") { emailNote(active()); }
-    else if (c === "reply" || c === "re" || c === "r") { replyToNote(active()); }
-    else if (c === "mailsetup" || c === "emailsetup" || c === "smtp") { openSmtpSettings(); }
-    else if (c === "fetch" || c === "inbox" || c === "receive" || c === "imap") { fetchEmail(); }
     else if (c === "open" || c === "o" || c === "e" || c === "edit" || c === "openmd") { openMarkdownFiles(); }
     else if (c === "new" || c === "n") { newNote(); }
     else if (c === "delete" || c === "d") { deleteActive(); }
     else if (c === "help" || c === "h") { openSheet(); }
     else if (c === "wrap") { toggleWrap(); }
     else if (c === "preview" || c === "autopreview" || c === "p" || c === "md") { toggleAutoPreview(); }
+    else if (c === "split" || c === "sp" || c === "vsplit") { toggleSplitView(); }
     else if (c === "theme" || c.indexOf("theme ") === 0) {
       var nm = c.slice(5).trim().toLowerCase();
       if (nm && THEMES[nm]) applyTheme(nm, true);
@@ -3353,16 +3306,6 @@
       el.addEventListener("dragend",   cleanDrag);
     }
 
-    if (kind === "mail") {
-      if (nt.unread) {
-        var dot = document.createElement("span");
-        dot.className = "ni-unread"; dot.textContent = "●";
-        titleEl.appendChild(dot);
-      }
-      var mic = document.createElement("span");
-      mic.className = "ni-mail-ic"; mic.textContent = "✉";
-      titleEl.appendChild(mic);
-    }
     titleEl.appendChild(document.createTextNode(titleOf(nt)));
     if (nt.pinned) {
       var pin = document.createElement("span");
@@ -3399,14 +3342,6 @@
       purgeBtn.addEventListener("click", function (e) { e.stopPropagation(); purgeNote(nt.id); });
       actions.appendChild(restoreBtn); actions.appendChild(purgeBtn);
       el.appendChild(actions);
-    } else if (kind === "mail") {
-      var mailActions = document.createElement("div");
-      mailActions.className = "ni-actions";
-      var replyBtn = document.createElement("span");
-      replyBtn.className = "ni-action-btn"; replyBtn.title = "Reply"; replyBtn.textContent = "↩";
-      replyBtn.addEventListener("click", function (e) { e.stopPropagation(); replyToNote(nt); });
-      mailActions.appendChild(replyBtn);
-      el.appendChild(mailActions);
     }
     el.addEventListener("click", function () { openNote(nt.id); });
     return el;
@@ -3419,15 +3354,14 @@
         && (!activeTag || tagsOf(nt).indexOf(activeTag) !== -1);
     }
     var sorted    = sortedNotes(state.notes).filter(matches);
-    var regular   = sorted.filter(function (nt) { return !nt.deleted && !nt.mailId && !nt.isTemplate; });
-    var mail      = sorted.filter(function (nt) { return !nt.deleted && nt.mailId; });
+    var regular   = sorted.filter(function (nt) { return !nt.deleted && !nt.isTemplate; });
     var templates = state.notes.filter(function (nt) { return nt.isTemplate && !nt.deleted; }).filter(matches);
     var trash   = state.notes.filter(function (nt) { return nt.deleted; }).filter(matches)
       .sort(function (a, b) { return (b.deletedAt || 0) - (a.deletedAt || 0); });
 
     noteList.innerHTML = "";
 
-    if (!regular.length && !mail.length && !trash.length && !templates.length) {
+    if (!regular.length && !trash.length && !templates.length) {
       var d = document.createElement("div");
       d.className = "empty-list";
       d.innerHTML = (q || activeTag) ? "No notes match." : "No notes yet.<br/>Create your first one below.";
@@ -3435,7 +3369,7 @@
       return;
     }
 
-    var sectioned = mail.length > 0 || trash.length > 0 || templates.length > 0;
+    var sectioned = trash.length > 0 || templates.length > 0;
     if (sectioned) {
       noteList.appendChild(sectionHeadEl("Notes", regular.length));
       if (!sectionCollapsed("Notes")) regular.forEach(function (nt) { noteList.appendChild(noteItemEl(nt, "note")); });
@@ -3450,14 +3384,6 @@
       if (!sectionCollapsed("Templates")) templates.forEach(function (nt) { noteList.appendChild(noteItemEl(nt, "note")); });
     }
 
-    if (mail.length) {
-      var unread = mail.filter(function (nt) { return nt.unread; }).length;
-      noteList.appendChild(sectionHeadEl("Email", unread ? mail.length + " · " + unread + " new" : mail.length, {
-        highlight: unread > 0,
-        action: { icon: "⟳", title: "Fetch new mail", fn: fetchEmail },
-      }));
-      if (!sectionCollapsed("Email")) mail.forEach(function (nt) { noteList.appendChild(noteItemEl(nt, "mail")); });
-    }
     if (trash.length) {
       noteList.appendChild(sectionHeadEl("Trash", trash.length));
       if (!sectionCollapsed("Trash")) trash.forEach(function (nt) { noteList.appendChild(noteItemEl(nt, "trash")); });
@@ -3469,16 +3395,6 @@
     if (el && nt) {
       var titleEl = el.querySelector(".ni-title");
       titleEl.innerHTML = "";
-      if (nt.mailId) {
-        if (nt.unread) {
-          var dot = document.createElement("span");
-          dot.className = "ni-unread"; dot.textContent = "●";
-          titleEl.appendChild(dot);
-        }
-        var mic = document.createElement("span");
-        mic.className = "ni-mail-ic"; mic.textContent = "✉";
-        titleEl.appendChild(mic);
-      }
       titleEl.appendChild(document.createTextNode(titleOf(nt)));
       if (nt.pinned) {
         var pin = document.createElement("span");
@@ -3517,7 +3433,6 @@
     }
     state.activeId = id;
     var nt = active();
-    if (nt && nt.unread) delete nt.unread;   // opening a fetched email marks it read
     // Locked encrypted notes show an empty editor (hint text appears automatically).
     ta.value = (nt && nt.encrypted && !nt.body) ? "" : (nt ? nt.body : "");
     cur = 0;
@@ -3703,7 +3618,7 @@
       var t = document.createElement("span"); t.className = "pi-title";
       t.textContent = it.type === "create" ? ("Create \u201C" + it.title + "\u201D") : it.title;
       var tag = document.createElement("span"); tag.className = "pi-tag";
-      tag.textContent = it.type === "create" ? "new" : (it.note && it.note.mailId ? "\u2709 mail" : "note");
+      tag.textContent = it.type === "create" ? "new" : "note";
       el.appendChild(t); el.appendChild(tag);
       el.addEventListener("mousedown", function (ev) { ev.preventDefault(); chooseLink(i); });
       list.appendChild(el);
@@ -3791,17 +3706,9 @@
     var post = (after === "" || after.charAt(0) === "\n") ? "" : "\n";
     insertAtCursor(pre + text + post);
   }
-  // When building an email body, emailCidCollect is a Set; in that mode image
-  // refs become cid: URLs (and the id is recorded) so they ride along as inline
-  // attachments instead of bloating the HTML with base64 data URIs.
-  var emailCidCollect = null;
   function resolveImg(url) {
     if (/^img:/.test(url)) {
       var id = url.slice(4);
-      if (emailCidCollect) {
-        if (state.images[id]) { emailCidCollect.add(id); return "cid:" + id; }
-        return "";
-      }
       var im = state.images[id]; return im ? im.data : "";
     }
     return url;
@@ -4163,7 +4070,7 @@
   }
   function toggleWrap() {
     app.classList.toggle("nowrap");
-    $("wrapBtn").classList.toggle("on", !app.classList.contains("nowrap"));
+    refreshViewMenu();
     refreshGutterLayout();
     ta.focus();
   }
@@ -4193,6 +4100,7 @@
     ]],
     ["Reading (preview)", [
       ["Space", "toggle reading ↔ editing"],
+      [":split", "edit and preview side by side"],
       ["Tab / Shift-Tab", "next / previous note"],
       ["j / k", "scroll line down / up"],
       ["Ctrl-d / Ctrl-u", "scroll half a page"],
@@ -4238,11 +4146,8 @@
     ["Sidebar", [
       ["Notes", "your regular notes"],
       ["Templates", "⊞ — notes marked :savetemplate; click + to use one"],
-      ["Email", "messages imported with :fetch — ● marks unread"],
       ["Trash", "deleted notes — auto-clears after 30 days"],
       ["click heading", "collapse / expand a section"],
-      ["⟳ hover", "fetch new mail (Email heading)"],
-      ["↩ hover", "reply to a fetched email"],
       ["↺ hover", "restore a trashed note"],
       ["✕ hover", "delete a trashed note forever"],
       ["sort → drag", "cycle sort to 'drag' to manually reorder notes"],
@@ -4281,10 +4186,6 @@
       [":w", "save now"],
       [":saveas", "save this note as .md"],
       [":pdf", "export this note as a PDF"],
-      [":mail", "email this note via your SMTP account"],
-      [":reply", "draft a reply to the current fetched email"],
-      [":mailsetup", "configure email (SMTP + IMAP) settings"],
-      [":fetch", "fetch inbox messages in as notes"],
       [":open", "open .md file(s) as notes"],
       [":new", "create a note"],
       [":go", "quick-open a note (same as Ctrl-p)"],
@@ -4304,6 +4205,7 @@
       [":numbers", "toggle line numbers"],
       [":rnu", "toggle relative line numbers"],
       [":preview", "auto-preview when not editing"],
+      [":split", "edit and preview side by side"],
       [":theme", "change color scheme"],
       [":savefile", "autosave to a .json file"],
       [":export", "download a .json backup"],
@@ -4339,15 +4241,11 @@
   // Global keys + wiring
   // ---------------------------------------------------------------------------
   document.addEventListener("keydown", function (e) {
-    // Email dialogs: while open, keep their inputs working and let Esc close
-    // them — don't let editor shortcuts (?, Ctrl-F, …) fire underneath.
-    var cs = $("composeScrim"), ss = $("smtpScrim"), es = $("encScrim");
+    // Encryption dialog: while open, keep its inputs working and let Esc close
+    // it — don't let editor shortcuts (?, Ctrl-F, …) fire underneath.
+    var es = $("encScrim");
     if (es.classList.contains("show")) {
       if (e.key === "Escape") { e.preventDefault(); closeEncryptDialog(); }
-      return;
-    }
-    if (cs.classList.contains("show") || ss.classList.contains("show")) {
-      if (e.key === "Escape") { e.preventDefault(); if (cs.classList.contains("show")) closeCompose(); else closeSmtp(); }
       return;
     }
     // History / template palette escape
@@ -4361,6 +4259,8 @@
     if (tm && tm.classList.contains("show") && e.key === "Escape") { e.preventDefault(); closeThemeMenu(); ta.focus(); return; }
     var fm = document.getElementById("fileMenu");
     if (fm && fm.classList.contains("show") && e.key === "Escape") { e.preventDefault(); closeFileMenu(); ta.focus(); return; }
+    var vm = document.getElementById("viewMenu");
+    if (vm && vm.classList.contains("show") && e.key === "Escape") { e.preventDefault(); closeViewMenu(); ta.focus(); return; }
     if (scrim.classList.contains("show")) {
       if (e.key === "Escape") { e.preventDefault(); closeSheet(); }
       return;
@@ -4399,6 +4299,7 @@
   ta.addEventListener("input", function () {
     if (mode !== "insert") return;
     syncNote(); updateStatus(); updateGutter();
+    if (splitView) renderPreview();
     var pos = ta.selectionStart;
     if (pos >= 2 && ta.value.slice(pos - 2, pos) === "[[" && !$("linkPalette").classList.contains("show")) {
       openLinkPalette({ replaceFrom: pos - 2, origin: "insert" });
@@ -4447,7 +4348,26 @@
   });
 
   window.addEventListener("resize", function () { refreshGutterLayout(); });
-  $("numBtn").addEventListener("click", toggleNumbers);
+  // Flush any pending debounced save as soon as the app might be going away —
+  // don't wait for the 450ms timer to catch up on its own.
+  document.addEventListener("visibilitychange", function () { if (document.hidden) flushSave(); });
+  window.addEventListener("beforeunload", function () { flushSave(); });
+  if (window.appLifecycle) {
+    window.appLifecycle.onBeforeClose(async function () {
+      await flushSave();
+      window.appLifecycle.ack();
+    });
+  }
+  if (window.windowControls) {
+    $("winCloseBtn").addEventListener("click", function () { window.windowControls.close(); });
+    $("winMinBtn").addEventListener("click", function () { window.windowControls.minimize(); });
+    $("winMaxBtn").addEventListener("click", function () { window.windowControls.toggleMaximize(); });
+    window.windowControls.isMaximized().then(function (isMax) { app.classList.toggle("win-maximized", isMax); });
+    window.windowControls.onMaximizeChange(function (isMax) { app.classList.toggle("win-maximized", isMax); });
+  } else {
+    // Not running under Electron (e.g. previewing the raw file) — nothing to control.
+    $("winControls").style.display = "none";
+  }
   $("sortBtn").addEventListener("click", cycleSortBy);
   filterInput.addEventListener("input", function () { renderTagBar(); renderList(); });
   $("newBtn").addEventListener("click", newNote);
@@ -4468,22 +4388,6 @@
   $("helpBtn").addEventListener("click", openSheet);
   $("sheetX").addEventListener("click", closeSheet);
   scrim.addEventListener("click", function (e) { if (e.target === scrim) closeSheet(); });
-
-  // ---- Email dialog wiring ----
-  $("composeX").addEventListener("click", closeCompose);
-  $("composeScrim").addEventListener("click", function (e) { if (e.target === this) closeCompose(); });
-  $("composeSend").addEventListener("click", sendComposed);
-  $("composeSettings").addEventListener("click", function () { closeCompose(); openSmtpSettings(); });
-  ["composeTo", "composeSubject"].forEach(function (id) {
-    $(id).addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); sendComposed(); } });
-  });
-  $("smtpX").addEventListener("click", closeSmtp);
-  $("smtpScrim").addEventListener("click", function (e) { if (e.target === this) closeSmtp(); });
-  $("smtpSave").addEventListener("click", saveSmtp);
-  $("smtpTest").addEventListener("click", testSmtp);
-  ["smtpHost", "smtpPort", "smtpUser", "smtpPass", "smtpFrom", "imapHost", "imapPort"].forEach(function (id) {
-    $(id).addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); saveSmtp(); } });
-  });
 
   var linkSearch = $("linkSearch");
   linkSearch.addEventListener("input", function () { renderLinkList(this.value); });
@@ -4560,7 +4464,6 @@
   $("encScrim").addEventListener("click", function(e) { if (e.target === this) closeEncryptDialog(); });
   $("encPass").addEventListener("keydown", function(e) { if (e.key === "Enter") { e.preventDefault(); confirmEncrypt(); } });
 
-  $("prevBtn").addEventListener("click", toggleAutoPreview);
   preview.addEventListener("dblclick", function (e) {
     if (e.target.closest && e.target.closest("button.code-copy")) return;
     if (mode !== "insert") enterInsert(cur);
@@ -4573,23 +4476,24 @@
     var ae = document.activeElement;
     if (ae === filterInput || ae === cmdInput || ae === $("linkSearch")) return;
     if (scrim.classList.contains("show")) return;
-    var cs = $("composeScrim"), ss = $("smtpScrim");
-    if (cs.classList.contains("show") || ss.classList.contains("show")) return;
     var tm = document.getElementById("themeMenu"); if (tm && tm.classList.contains("show")) return;
     var fm = document.getElementById("fileMenu"); if (fm && fm.classList.contains("show")) return;
+    var vm = document.getElementById("viewMenu"); if (vm && vm.classList.contains("show")) return;
     var lp = document.getElementById("linkPalette"); if (lp && lp.classList.contains("show")) return;
     onKeyDown(e);
   });
-  $("wrapBtn").addEventListener("click", toggleWrap);
   $("wc").addEventListener("click", function () { showChars = !showChars; updateStatus(); });
-  $("themeBtn").addEventListener("click", function (e) { e.stopPropagation(); closeFileMenu(); toggleThemeMenu(); });
-  $("fileBtn").addEventListener("click", function (e) { e.stopPropagation(); closeThemeMenu(); toggleFileMenu(); });
+  $("themeBtn").addEventListener("click", function (e) { e.stopPropagation(); closeFileMenu(); closeViewMenu(); toggleThemeMenu(); });
+  $("fileBtn").addEventListener("click", function (e) { e.stopPropagation(); closeThemeMenu(); closeViewMenu(); toggleFileMenu(); });
+  $("viewBtn").addEventListener("click", function (e) { e.stopPropagation(); closeThemeMenu(); closeFileMenu(); toggleViewMenu(); });
   saveDot.addEventListener("click", function () { if (pendingHandle) reconnectFile(); });
   document.addEventListener("click", function (e) {
     var tm = document.getElementById("themeMenu");
     if (tm && tm.classList.contains("show") && !tm.contains(e.target) && e.target.id !== "themeBtn") closeThemeMenu();
     var fm = document.getElementById("fileMenu");
     if (fm && fm.classList.contains("show") && !fm.contains(e.target) && e.target.id !== "fileBtn") closeFileMenu();
+    var vm = document.getElementById("viewMenu");
+    if (vm && vm.classList.contains("show") && !vm.contains(e.target) && e.target.id !== "viewBtn") closeViewMenu();
   });
 
   // ---------------------------------------------------------------------------
@@ -4597,6 +4501,8 @@
   // ---------------------------------------------------------------------------
   buildSheet();
   buildThemeMenu();
+  updateClock();
+  setInterval(updateClock, 1000);
   (function setFavicon() {
     var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">' +
       '<defs>' +
@@ -4613,7 +4519,6 @@
     document.head.appendChild(link);
     document.title = "modal";
   })();
-  $("wrapBtn").classList.add("on"); // wrap is on by default
   (async function init() {
     var saved = await Store.load();
     if (saved && Array.isArray(saved.notes) && saved.notes.length) {
@@ -4628,9 +4533,10 @@
     else applyTheme(savedTheme, false);
     numbersOn = !(saved && saved.numbers === false);
     app.classList.toggle("with-numbers", numbersOn);
-    $("numBtn").classList.toggle("on", numbersOn);
     autoPreview = !(saved && saved.autoPreview === false);
-    $("prevBtn").classList.toggle("on", autoPreview);
+    splitView = !!(saved && saved.splitView);
+    app.classList.toggle("split-on", splitView);
+    refreshViewMenu();
     sortBy = (saved && saved.sortBy) || "modified";
     if (sortBy === "manual" && saved && saved.noteOrder) state.noteOrder = saved.noteOrder;
     updateSortLabel();
@@ -4660,15 +4566,6 @@
     }
 
     // Wire the native File-menu items to the in-app handlers.
-    if (window.mailer && typeof window.mailer.onEmailNote === "function") {
-      window.mailer.onEmailNote(function () { emailNote(active()); });
-    }
-    if (window.mailer && typeof window.mailer.onEmailSettings === "function") {
-      window.mailer.onEmailSettings(function () { openSmtpSettings(); });
-    }
-    if (window.mailer && typeof window.mailer.onFetchMail === "function") {
-      window.mailer.onFetchMail(function () { fetchEmail(); });
-    }
     if (window.pdfExporter && typeof window.pdfExporter.onExportPdf === "function") {
       window.pdfExporter.onExportPdf(function () { exportPdf(); });
     }

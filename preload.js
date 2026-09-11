@@ -20,30 +20,28 @@ contextBridge.exposeInMainWorld("storage", {
   _path: () => ipcRenderer.invoke("storage:path"),
 });
 
-// Email. The page never holds credentials or talks to the network directly —
-// it asks the main process to send (or to open the OS mail client as a
-// fallback). The SMTP password is stored/encrypted in main and is never
-// returned to the page.
-contextBridge.exposeInMainWorld("mailer", {
-  // mailto: fallback (no account configured).
-  compose: (subject, body) => ipcRenderer.invoke("mail:compose", subject, body),
-  // SMTP config: getConfig never includes the password (only `hasPassword`).
-  getConfig: () => ipcRenderer.invoke("smtp:getConfig"),
-  saveConfig: (cfg) => ipcRenderer.invoke("smtp:saveConfig", cfg),
-  testConnection: () => ipcRenderer.invoke("smtp:test"),
-  // Send an HTML message with inline-image (cid) attachments.
-  send: (payload) => ipcRenderer.invoke("mail:send", payload),
-  // Receiving: fetch the latest INBOX messages over IMAP (read-only).
-  fetchInbox: (opts) => ipcRenderer.invoke("imap:fetch", opts),
-  // Native menu items route through these.
-  onEmailNote: (cb) => ipcRenderer.on("menu:email-note", () => cb()),
-  onEmailSettings: (cb) => ipcRenderer.on("menu:email-settings", () => cb()),
-  onFetchMail: (cb) => ipcRenderer.on("menu:fetch-mail", () => cb()),
-});
-
 // PDF export. The renderer builds the HTML; main renders it in a hidden window
 // and writes the resulting PDF to wherever the user's save dialog points.
 contextBridge.exposeInMainWorld("pdfExporter", {
   export: (payload) => ipcRenderer.invoke("export:pdf", payload),
   onExportPdf: (cb) => ipcRenderer.on("menu:export-pdf", () => cb()),
+});
+
+// The renderer debounces saves, so main holds the window close until the
+// renderer flushes any pending save and acks — otherwise a close landing
+// mid-debounce would drop the last edit silently.
+contextBridge.exposeInMainWorld("appLifecycle", {
+  onBeforeClose: (cb) => ipcRenderer.on("app:before-close", () => cb()),
+  ack: () => ipcRenderer.send("app:close-ack"),
+});
+
+// The window is frameless on every platform (see main.js) — no native
+// minimize/maximize/close anywhere, so the page draws its own and drives
+// them through these instead.
+contextBridge.exposeInMainWorld("windowControls", {
+  minimize: () => ipcRenderer.invoke("window:minimize"),
+  toggleMaximize: () => ipcRenderer.invoke("window:toggle-maximize"),
+  close: () => ipcRenderer.invoke("window:close"),
+  isMaximized: () => ipcRenderer.invoke("window:is-maximized"),
+  onMaximizeChange: (cb) => ipcRenderer.on("window:maximize-changed", (_evt, isMax) => cb(isMax)),
 });

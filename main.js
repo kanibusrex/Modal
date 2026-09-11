@@ -8,13 +8,10 @@
 //      base64 — persist across launches without the ~5MB localStorage limit.
 //   3. Provide a native menu and send external links to the system browser.
 
-const { app, BrowserWindow, Menu, shell, ipcMain, dialog, safeStorage } = require("electron");
+const { app, BrowserWindow, Menu, shell, ipcMain, dialog } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const fsp = require("fs/promises");
-const nodemailer = require("nodemailer");
-const { ImapFlow } = require("imapflow");
-const { simpleParser } = require("mailparser");
 
 // --- Single instance: focus the existing window instead of opening a second one.
 const gotLock = app.requestSingleInstanceLock();
@@ -32,9 +29,11 @@ if (!gotLock) {
 // (write to a temp file, then rename) so a crash mid-write can't corrupt data.
 
 let storeFilePath = null;     // resolved in app.whenReady once userData exists
+let backupsDir = null;
 let storeCache = null;        // in-memory mirror: { [key]: string }
 let writeTimer = null;
 let writePromise = Promise.resolve();
+let lastBackupDay = null;     // "YYYY-MM-DD" of the last daily backup taken
 
 function loadStoreFromDisk() {
   try {
@@ -43,6 +42,26 @@ function loadStoreFromDisk() {
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch (e) {
     return {}; // missing or unreadable -> start empty
+  }
+}
+
+// Once per calendar day, before the first write of that day lands, copy
+// whatever is currently on disk into backups/. This is the safety net for
+// "today's session wrote something bad" — the prior day's known-good file
+// is still there. Keeps at most MAX_BACKUPS files.
+const MAX_BACKUPS = 14;
+async function maybeBackupBeforeWrite() {
+  if (!storeFilePath || !fs.existsSync(storeFilePath)) return;
+  const today = new Date().toISOString().slice(0, 10);
+  if (lastBackupDay === today) return;
+  lastBackupDay = today;
+  try {
+    await fsp.mkdir(backupsDir, { recursive: true });
+    await fsp.copyFile(storeFilePath, path.join(backupsDir, `modal-store-${today}.json`));
+    const files = (await fsp.readdir(backupsDir)).filter((f) => f.startsWith("modal-store-")).sort();
+    for (let i = 0; i < files.length - MAX_BACKUPS; i++) await fsp.unlink(path.join(backupsDir, files[i]));
+  } catch (e) {
+    console.error("modal: backup failed:", e);
   }
 }
 
@@ -58,6 +77,7 @@ function flushStore() {
   // Chain writes so two flushes never interleave on the same file.
   writePromise = writePromise.then(async () => {
     try {
+      await maybeBackupBeforeWrite();
       await fsp.writeFile(tmp, snapshot, "utf8");
       await fsp.rename(tmp, storeFilePath);
     } catch (e) {
@@ -69,10 +89,8 @@ function flushStore() {
 
 function initStore() {
   storeFilePath = path.join(app.getPath("userData"), "modal-store.json");
+  backupsDir = path.join(app.getPath("userData"), "backups");
   storeCache = loadStoreFromDisk();
-  // SMTP settings live in their own file so credentials never sit in the
-  // notes JSON (which the user can reveal/export).
-  smtpConfigPath = path.join(app.getPath("userData"), "modal-smtp.json");
 }
 
 ipcMain.handle("storage:get", (_evt, key) => {
@@ -98,194 +116,6 @@ ipcMain.handle("storage:delete", (_evt, key) => {
 
 // Let the renderer reveal where its data lives (used by the Help menu).
 ipcMain.handle("storage:path", () => storeFilePath);
-
-// ---------------------------------------------------------------------------
-// Email
-// ---------------------------------------------------------------------------
-// Two paths:
-//   1. mail:compose — hand a mailto: URL to the OS mail client (no account).
-//      Used as the fallback when SMTP isn't configured.
-//   2. SMTP direct send via nodemailer — the app sends mail itself, so it can
-//      deliver an HTML body with inline images. Credentials live in a separate
-//      file in userData; the password is encrypted with the OS keychain via
-//      Electron's safeStorage and never written in plaintext or returned to
-//      the renderer.
-
-// --- mailto fallback ---
-ipcMain.handle("mail:compose", (_evt, subject, body) => {
-  const s = encodeURIComponent(String(subject == null ? "" : subject));
-  const b = encodeURIComponent(String(body == null ? "" : body));
-  shell.openExternal("mailto:?subject=" + s + "&body=" + b);
-  return true;
-});
-
-// --- SMTP config storage (password encrypted at rest) ---
-let smtpConfigPath = null;   // resolved in initStore alongside the note store
-
-function readSmtpConfigRaw() {
-  try {
-    const raw = fs.readFileSync(smtpConfigPath, "utf8");
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch (e) {
-    return {};
-  }
-}
-
-// Decrypt the stored password, tolerating a machine where encryption isn't
-// available (then it was stored as a plaintext fallback, flagged on disk).
-function decryptStoredPassword(cfg) {
-  if (!cfg) return "";
-  if (cfg.passwordPlain != null) return String(cfg.passwordPlain);
-  if (cfg.passwordEnc) {
-    try {
-      return safeStorage.decryptString(Buffer.from(cfg.passwordEnc, "base64"));
-    } catch (e) {
-      console.error("modal: could not decrypt SMTP password:", e);
-      return "";
-    }
-  }
-  return "";
-}
-
-// What the renderer is allowed to see — never the password itself.
-function publicSmtpConfig() {
-  const cfg = readSmtpConfigRaw();
-  return {
-    host: cfg.host || "",
-    port: cfg.port || 587,
-    secure: !!cfg.secure,
-    user: cfg.user || "",
-    from: cfg.from || "",
-    lastTo: cfg.lastTo || "",
-    // Receiving (IMAP). Shares the username + password with sending.
-    imapHost: cfg.imapHost || "",
-    imapPort: cfg.imapPort || 993,
-    imapSecure: cfg.imapSecure !== false,
-    hasPassword: !!(cfg.passwordEnc || cfg.passwordPlain != null),
-    encryptionAvailable: safeStorage.isEncryptionAvailable(),
-  };
-}
-
-ipcMain.handle("smtp:getConfig", () => publicSmtpConfig());
-
-// Save config. If `password` is a non-empty string we (re)store it; if it's an
-// empty string we keep whatever was saved before (so the user needn't retype
-// it just to tweak the host). Returns the public view.
-ipcMain.handle("smtp:saveConfig", (_evt, incoming) => {
-  const prev = readSmtpConfigRaw();
-  const cfg = {
-    host: String((incoming && incoming.host) || "").trim(),
-    port: Number((incoming && incoming.port) || 587),
-    secure: !!(incoming && incoming.secure),
-    user: String((incoming && incoming.user) || "").trim(),
-    from: String((incoming && incoming.from) || "").trim(),
-    lastTo: String((incoming && incoming.lastTo) || prev.lastTo || "").trim(),
-    imapHost: String((incoming && incoming.imapHost) || "").trim(),
-    imapPort: Number((incoming && incoming.imapPort) || 993),
-    imapSecure: incoming && incoming.imapSecure != null ? !!incoming.imapSecure : true,
-  };
-  const newPassword = incoming && typeof incoming.password === "string" ? incoming.password : "";
-  if (newPassword) {
-    if (safeStorage.isEncryptionAvailable()) {
-      cfg.passwordEnc = safeStorage.encryptString(newPassword).toString("base64");
-    } else {
-      // No OS keychain backend (e.g. some Linux setups) — store as plaintext
-      // but mark it so we can warn the user in the UI.
-      cfg.passwordPlain = newPassword;
-    }
-  } else {
-    // Preserve the previously saved password.
-    if (prev.passwordEnc) cfg.passwordEnc = prev.passwordEnc;
-    if (prev.passwordPlain != null) cfg.passwordPlain = prev.passwordPlain;
-  }
-  try {
-    const tmp = smtpConfigPath + ".tmp";
-    fs.writeFileSync(tmp, JSON.stringify(cfg), { encoding: "utf8", mode: 0o600 });
-    fs.renameSync(tmp, smtpConfigPath);
-    try { fs.chmodSync(smtpConfigPath, 0o600); } catch (e) {}
-  } catch (e) {
-    console.error("modal: failed to save SMTP config:", e);
-    return { ok: false, error: "Could not save settings to disk." };
-  }
-  return { ok: true, config: publicSmtpConfig() };
-});
-
-function buildTransport() {
-  const cfg = readSmtpConfigRaw();
-  if (!cfg.host) return { error: "No SMTP server configured." };
-  const password = decryptStoredPassword(cfg);
-  const transport = nodemailer.createTransport({
-    host: cfg.host,
-    port: Number(cfg.port) || 587,
-    secure: !!cfg.secure, // true for 465; false uses STARTTLS on 587
-    auth: cfg.user ? { user: cfg.user, pass: password } : undefined,
-  });
-  return { transport, cfg };
-}
-
-// Verify host/port/credentials without sending anything.
-ipcMain.handle("smtp:test", async () => {
-  const { transport, error } = buildTransport();
-  if (error) return { ok: false, error };
-  try {
-    await transport.verify();
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: (e && e.message) || String(e) };
-  }
-});
-
-// Send a message. `payload` = { to, subject, html, text, attachments } where
-// each attachment is { cid, filename, dataUri }. Inline images are referenced
-// from the HTML as cid:<cid>.
-ipcMain.handle("mail:send", async (_evt, payload) => {
-  payload = payload || {};
-  const to = String(payload.to || "").trim();
-  if (!to) return { ok: false, error: "No recipient address." };
-
-  const { transport, cfg, error } = buildTransport();
-  if (error) return { ok: false, error };
-
-  const attachments = Array.isArray(payload.attachments)
-    ? payload.attachments.map((a) => {
-        // data:<mime>;base64,<data>
-        const m = /^data:([^;]+);base64,(.*)$/.exec(String(a.dataUri || ""));
-        if (!m) return null;
-        return {
-          cid: a.cid,
-          filename: a.filename || (a.cid + ".png"),
-          content: Buffer.from(m[2], "base64"),
-          contentType: m[1],
-        };
-      }).filter(Boolean)
-    : [];
-
-  // Thread replies correctly when the caller supplies the original Message-ID.
-  const inReplyTo = payload.inReplyTo ? String(payload.inReplyTo) : "";
-
-  try {
-    await transport.sendMail({
-      from: cfg.from || cfg.user,
-      to,
-      subject: String(payload.subject || "(no subject)"),
-      text: String(payload.text || ""),
-      html: payload.html ? String(payload.html) : undefined,
-      attachments,
-      inReplyTo: inReplyTo || undefined,
-      references: inReplyTo || undefined,
-    });
-    // Remember the recipient for next time (convenience only).
-    try {
-      const raw = readSmtpConfigRaw();
-      raw.lastTo = to;
-      fs.writeFileSync(smtpConfigPath, JSON.stringify(raw), { encoding: "utf8", mode: 0o600 });
-    } catch (e) {}
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: (e && e.message) || String(e) };
-  }
-});
 
 // --- PDF export ---
 // Renders a caller-supplied HTML string in a hidden window, prints it to PDF,
@@ -325,79 +155,6 @@ ipcMain.handle("export:pdf", async (_evt, payload) => {
   }
 });
 
-// --- IMAP: fetch the most recent INBOX messages ---
-// Read-only: we open the mailbox without marking anything seen, parse each
-// message, and return a plain-data array. The renderer turns them into notes.
-ipcMain.handle("imap:fetch", async (_evt, opts) => {
-  opts = opts || {};
-  const limit = Math.min(Math.max(parseInt(opts.limit, 10) || 25, 1), 100);
-  const cfg = readSmtpConfigRaw();
-  // Fall back to Gmail's IMAP host if only the (Gmail) SMTP side was filled in.
-  const host = cfg.imapHost || (cfg.host === "smtp.gmail.com" ? "imap.gmail.com" : "");
-  if (!host) return { ok: false, error: "No IMAP server configured (set it in Email Settings)." };
-  if (!cfg.user) return { ok: false, error: "No username configured." };
-
-  const client = new ImapFlow({
-    host,
-    port: Number(cfg.imapPort) || 993,
-    secure: cfg.imapSecure !== false,
-    auth: { user: cfg.user, pass: decryptStoredPassword(cfg) },
-    logger: false,
-  });
-
-  try {
-    await client.connect();
-    const messages = [];
-    // readOnly so messages aren't flagged \Seen just by fetching them.
-    const lock = await client.getMailboxLock("INBOX", { readOnly: true });
-    try {
-      const total = (client.mailbox && client.mailbox.exists) || 0;
-      if (total > 0) {
-        const start = Math.max(1, total - limit + 1);
-        for await (const msg of client.fetch(start + ":*", { envelope: true, source: true })) {
-          let parsed;
-          try { parsed = await simpleParser(msg.source); } catch (e) { parsed = null; }
-          const env = msg.envelope || {};
-          const addrText = (a) => Array.isArray(a) ? a.map((x) => x.name ? `${x.name} <${x.address}>` : x.address).join(", ") : "";
-          const date = (parsed && parsed.date) || env.date || new Date();
-          messages.push({
-            uid: msg.uid,
-            messageId: (parsed && parsed.messageId) || env.messageId || ("seq-" + msg.seq),
-            subject: (parsed && parsed.subject) || env.subject || "(no subject)",
-            from: (parsed && parsed.from && parsed.from.text) || addrText(env.from) || "",
-            to: (parsed && parsed.to && parsed.to.text) || addrText(env.to) || "",
-            date: date instanceof Date ? date.toISOString() : String(date),
-            text: (parsed && parsed.text) || (parsed && parsed.html ? String(parsed.html).replace(/<[^>]+>/g, " ").replace(/\s+\n/g, "\n").replace(/[ \t]{2,}/g, " ").trim() : ""),
-            attachments: ((parsed && parsed.attachments) || []).map((a) => {
-              const isImage = /^image\//i.test(a.contentType || "");
-              const att = {
-                filename: a.filename || (a.cid ? "inline-image" : "attachment"),
-                contentType: a.contentType || "",
-                inline: a.contentDisposition === "inline" || !!a.related,
-                size: a.size || (a.content ? a.content.length : 0),
-              };
-              // Embed images (only) as data URIs so the note can render them;
-              // skip very large ones to keep the note store reasonable.
-              if (isImage && a.content && a.content.length <= 15 * 1024 * 1024) {
-                att.dataUri = "data:" + (a.contentType || "image/png") + ";base64," + a.content.toString("base64");
-              }
-              return att;
-            }),
-          });
-        }
-      }
-    } finally {
-      lock.release();
-    }
-    await client.logout();
-    messages.reverse(); // newest first
-    return { ok: true, messages };
-  } catch (e) {
-    try { await client.logout(); } catch (_) {}
-    return { ok: false, error: (e && e.message) || String(e) };
-  }
-});
-
 // ---------------------------------------------------------------------------
 // Window
 // ---------------------------------------------------------------------------
@@ -414,6 +171,14 @@ function createWindow() {
     // On macOS the dock icon comes from the packaged .icns; elsewhere set it here.
     icon: path.join(__dirname, "build", process.platform === "win32" ? "icon.ico" : "icon.png"),
     autoHideMenuBar: false,
+    // Frameless everywhere — the rail draws its own minimize/maximize/close
+    // (see the .win-controls dots in index.html) so the window looks the
+    // same on every platform instead of using each OS's own native chrome.
+    // macOS still needs titleBarStyle: "hidden" (frame:false alone breaks
+    // its rounded corners/shadow); the native traffic lights it draws for
+    // that are hidden right after creation, below.
+    frame: process.platform === "darwin",
+    titleBarStyle: process.platform === "darwin" ? "hidden" : undefined,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -423,7 +188,12 @@ function createWindow() {
     },
   });
 
+  if (process.platform === "darwin") mainWindow.setWindowButtonVisibility(false);
+
   mainWindow.loadFile(path.join(__dirname, "index.html"));
+
+  mainWindow.on("maximize", () => mainWindow.webContents.send("window:maximize-changed", true));
+  mainWindow.on("unmaximize", () => mainWindow.webContents.send("window:maximize-changed", false));
 
   // Open target=_blank / external http(s) links in the system browser,
   // never inside the app window.
@@ -442,11 +212,45 @@ function createWindow() {
     }
   });
 
+  // The renderer debounces saves (see scheduleSave in index.html), so a save
+  // can still be pending in memory — not yet even sent over IPC — when the
+  // user closes the window. Hold the close, ask the renderer to flush that
+  // pending save immediately, and only actually close once it acks (or the
+  // ack times out, so a frozen renderer can't block quitting forever).
+  closeAcked = false;
+  mainWindow.on("close", (e) => {
+    if (closeAcked) return;
+    e.preventDefault();
+    mainWindow.webContents.send("app:before-close");
+    setTimeout(() => { closeAcked = true; if (mainWindow) mainWindow.close(); }, 1500);
+  });
+
   mainWindow.on("closed", () => { mainWindow = null; });
 }
 
-// Persist any pending changes before the app fully exits.
+// Registered once (not per-window) to avoid stacking listeners across
+// close/reopen cycles on macOS, where the app can stay alive with no windows.
+let closeAcked = false;
+ipcMain.on("app:close-ack", () => {
+  closeAcked = true;
+  flushStore().then(() => { if (mainWindow) mainWindow.close(); });
+});
+
+// Last-resort safety net (e.g. renderer never got to ack): persist whatever
+// already made it into storeCache before the app fully exits.
 app.on("before-quit", () => { if (storeCache) flushStore(); });
+
+// Custom window controls — the page draws its own minimize/maximize/close
+// (see .win-controls in index.html) since the window is frameless on every
+// platform, so these are its only way to actually move the window state.
+ipcMain.handle("window:minimize", () => { if (mainWindow) mainWindow.minimize(); });
+ipcMain.handle("window:toggle-maximize", () => {
+  if (!mainWindow) return;
+  if (mainWindow.isMaximized()) mainWindow.unmaximize();
+  else mainWindow.maximize();
+});
+ipcMain.handle("window:close", () => { if (mainWindow) mainWindow.close(); });
+ipcMain.handle("window:is-maximized", () => !!(mainWindow && mainWindow.isMaximized()));
 
 // ---------------------------------------------------------------------------
 // Menu
@@ -482,19 +286,14 @@ function buildMenu() {
             }
           },
         },
-        { type: "separator" },
         {
-          label: "Email This Note…",
-          accelerator: "CmdOrCtrl+Shift+M",
-          click: () => { if (mainWindow) mainWindow.webContents.send("menu:email-note"); },
-        },
-        {
-          label: "Fetch Email (Inbox)…",
-          click: () => { if (mainWindow) mainWindow.webContents.send("menu:fetch-mail"); },
-        },
-        {
-          label: "Email Settings…",
-          click: () => { if (mainWindow) mainWindow.webContents.send("menu:email-settings"); },
+          label: "Reveal Daily Backups",
+          click: async () => {
+            if (backupsDir) {
+              await fsp.mkdir(backupsDir, { recursive: true });
+              shell.openPath(backupsDir);
+            }
+          },
         },
         { type: "separator" },
         {

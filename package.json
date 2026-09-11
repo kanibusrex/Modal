@@ -57,10 +57,5 @@
       ],
       "category": "Utility"
     }
-  },
-  "dependencies": {
-    "imapflow": "^1.4.2",
-    "mailparser": "^3.9.12",
-    "nodemailer": "^6.10.1"
   }
 }

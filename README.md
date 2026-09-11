@@ -23,37 +23,6 @@ and gives it **real, persistent storage on disk** so your notes survive restarts
 - **Tab between notes while reading.** In preview mode, `Tab` jumps to the next
   note and `Shift+Tab` to the previous one, following the sidebar's order (and
   respecting the search filter, if one is active). It wraps around at the ends.
-- **Email the current note (SMTP).** Send a note as a real email straight from
-  the app via the File menu ("Email This Note…", `Cmd/Ctrl+Shift+M`) or the
-  Vim-style commands `:mail` / `:email`. The note is rendered to an **HTML email
-  with its images inlined** (as `cid:` attachments), so pictures arrive intact.
-  A compose dialog lets you set the recipient and subject (pre-filled with the
-  note's title) before sending.
-  - **One-time setup:** File → "Email Settings…" (or `:mailsetup`) to enter your
-    SMTP host, port, username, password, and from-address. Works with Gmail (use
-    an [app password](https://support.google.com/accounts/answer/185833)),
-    Fastmail, Outlook, or any SMTP server. "Test connection" verifies it.
-  - **Credentials never leave your machine.** The password is encrypted with the
-    OS keychain via Electron's `safeStorage` and stored in
-    `modal-smtp.json` (in the same app-data folder as your notes), separate from
-    the notes file so it's never included in exports. On a system with no
-    keychain backend, the app warns and stores it unencrypted as a fallback.
-  - If SMTP isn't configured, the email commands open the settings dialog first.
-- **Fetch incoming email as notes (IMAP).** Pull your latest inbox messages
-  into modal via the File menu ("Fetch Email (Inbox)…") or the Vim-style
-  commands `:fetch` / `:inbox`. Each message is parsed and imported as a
-  read-only **note** (subject as the title, with From/Date and the body text).
-  **Image attachments are pulled into the note's images** (stored in the app's
-  image store and shown inline in preview / re-exported with the note); other
-  attachments are listed by name and size. Already-imported messages are skipped
-  on re-fetch (deduped by Message-ID). Reading is non-destructive — messages are
-  **not** marked as read on the server. To reply, just use "Email This Note…" on
-  the imported note.
-  - Receiving reuses your sending username and password; the IMAP host/port live
-    in the same Settings dialog (prefilled `imap.gmail.com` : `993`, SSL). For
-    Gmail, the same app password works, and IMAP must be enabled in Gmail (it is
-    by default for most accounts).
-
 
 ## Download & install
 
